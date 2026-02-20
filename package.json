@@ -1,0 +1,34 @@
+{
+    "name": "gravity-claw",
+    "version": "1.0.0",
+    "description": "Lean, secure personal AI agent — Telegram + Claude + agentic tool loop",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "start": "tsx src/index.ts"
+    },
+    "dependencies": {
+        "@supabase/supabase-js": "^2.97.0",
+        "axios": "^1.13.5",
+        "better-sqlite3": "^12.6.2",
+        "croner": "^10.0.1",
+        "cross-fetch": "^4.1.0",
+        "dotenv": "^16.4.7",
+        "edge-tts": "^1.0.1",
+        "elevenlabs-node": "^2.0.3",
+        "grammy": "^1.35.0",
+        "groq-sdk": "^0.37.0",
+        "node-cron": "^4.2.1",
+        "openai": "^6.22.0",
+        "playwright": "^1.58.2",
+        "tesseract.js": "^7.0.0"
+    },
+    "devDependencies": {
+        "@types/better-sqlite3": "^7.6.13",
+        "@types/node": "^22.13.4",
+        "pm2": "^6.0.14",
+        "tsx": "^4.19.3",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.5"
+    }
+}

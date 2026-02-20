@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Environment variables (secrets!)
+.env
+
+# Build output
+dist/
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# PM2
+ecosystem.config.cjs
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temp files
+*.tmp
+*.swp
+
+# IDE
+.vscode/
+.idea/
