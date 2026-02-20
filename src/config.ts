@@ -36,4 +36,12 @@ export const config = {
     modalBaseUrl: process.env.MODAL_BASE_URL || "",
     modalApiKey: process.env.MODAL_API_KEY || "",
     ocrSpaceApiKey: process.env.OCR_SPACE_API_KEY || "",
+
+    // ── Supabase (optional — enables cloud DB) ───────────
+    supabaseUrl: process.env.SUPABASE_URL || "",
+    supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || "",
+
+    // ── Ollama Fallback ───────────────────────────────────
+    ollamaBaseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
+    ollamaApiKey: process.env.OLLAMA_API_KEY || "", // They pasted an SSH key by accident
 } as const;

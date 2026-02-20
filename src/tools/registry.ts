@@ -2,11 +2,20 @@ import type OpenAI from "openai";
 import { browserTool } from "./browser-tool.js";
 
 // ── types ────────────────────────────────────────────────
+export interface ToolResult {
+    text: string;            // Stringified result for the LLM history
+    media?: {               // Optional media to be sent to the user
+        type: "image" | "audio" | "document";
+        buffer: Buffer;
+        caption?: string;
+    }[];
+}
+
 export interface Tool {
     name: string;
     description: string;
     parameters: Record<string, unknown>; // JSON Schema
-    execute: (input: Record<string, unknown>) => Promise<string>;
+    execute: (input: Record<string, unknown>) => Promise<string | ToolResult>;
 }
 
 // ── registry ─────────────────────────────────────────────

@@ -1,9 +1,14 @@
-import { Bot, InputFile } from "grammy";
+import { Bot, InputFile, GrammyError, HttpError } from "grammy";
 import { config } from "./config.js";
 import { runAgent } from "./agent.js";
+import { TypingIndicator } from "./utils/typing-indicator.js";
 import { transcribeVoice, synthesizeSpeech } from "./voice.js";
-import { trackBotMessage, saveFeedback } from "./memory.js";
+import { trackBotMessage, saveFeedback } from "./db-provider.js";
 import { extractTextFromImage } from "./vision.js";
+import { writeFileSync, readFileSync, existsSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import dns from "node:dns/promises";
 
 const bot = new Bot(config.telegramToken);
 
@@ -51,17 +56,21 @@ bot.on("message:text", async (ctx) => {
 
     console.log(`📩 [${chatId}] ${text}`);
 
-    try {
-        await ctx.replyWithChatAction("typing");
-        const response = await runAgent(String(chatId), text);
+    const typing = new TypingIndicator(ctx, "typing");
+    await typing.start();
 
-        if (response.length <= 4096) {
-            const sent = await ctx.reply(response, { parse_mode: "Markdown" }).catch(() => {
-                return ctx.reply(response);
+    try {
+        const result = await runAgent(String(chatId), text);
+        typing.stop();
+
+        // Send Text
+        if (result.text.length <= 4096) {
+            const sent = await ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => {
+                return ctx.reply(result.text);
             });
-            if (sent) trackBotMessage(String(chatId), sent.message_id, response);
+            if (sent) trackBotMessage(String(chatId), sent.message_id, result.text);
         } else {
-            const chunks = splitMessage(response, 4096);
+            const chunks = splitMessage(result.text, 4096);
             for (const chunk of chunks) {
                 const sent = await ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => {
                     return ctx.reply(chunk);
@@ -70,8 +79,18 @@ bot.on("message:text", async (ctx) => {
             }
         }
 
-        console.log(`✅ [${chatId}] Responded (${response.length} chars)`);
+        // Send Media (e.g. Canvas Screenshots)
+        if (result.media && result.media.length > 0) {
+            for (const media of result.media) {
+                if (media.type === "image") {
+                    await sendTelegramPhoto(String(chatId), media.buffer, media.caption);
+                }
+            }
+        }
+
+        console.log(`✅ [${chatId}] Responded (${result.text.length} chars, ${result.media?.length || 0} media)`);
     } catch (error) {
+        typing.stop();
         console.error(`❌ [${chatId}] Error:`, error);
         await ctx.reply("Something went wrong. Please try again.");
     }
@@ -83,10 +102,10 @@ bot.on("message:voice", async (ctx) => {
 
     console.log(`🎤 [${chatId}] Voice message received (${ctx.message.voice.duration}s)`);
 
-    try {
-        // Show recording indicator
-        await ctx.replyWithChatAction("record_voice");
+    const indicator = new TypingIndicator(ctx, "record_voice");
+    await indicator.start();
 
+    try {
         // 1. Download voice file from Telegram
         const file = await ctx.getFile();
         const fileUrl = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
@@ -96,42 +115,56 @@ bot.on("message:voice", async (ctx) => {
         console.log(`📥 [${chatId}] Downloaded ${audioBuffer.length} bytes`);
 
         // 2. Transcribe voice → text
-        await ctx.replyWithChatAction("typing");
+        indicator.setAction("typing");
         const transcription = await transcribeVoice(audioBuffer);
 
         if (!transcription.trim()) {
+            indicator.stop();
             await ctx.reply("🤔 I couldn't understand the voice message. Could you try again?");
             return;
         }
 
         // 3. Process through agent
-        await ctx.replyWithChatAction("typing");
-        const agentResponse = await runAgent(String(chatId), transcription);
+        const agentMessage = `[🎙️ Mensagem de Voz] ${transcription}`;
+        const agentResult = await runAgent(String(chatId), agentMessage);
 
-        // 4. Generate voice response
-        await ctx.replyWithChatAction("record_voice");
+        // 4. Generate voice response from the text part
+        indicator.setAction("record_voice");
         try {
-            const speechBuffer = await synthesizeSpeech(agentResponse);
+            const speechBuffer = await synthesizeSpeech(agentResult.text);
 
-            // 5. Send voice + text caption
-            await ctx.replyWithVoice(new InputFile(speechBuffer, "response.mp3"), {
-                caption: agentResponse.length <= 1024 ? agentResponse : agentResponse.substring(0, 1021) + "...",
-            });
+            // 5. Send voice response
+            indicator.stop();
+            await ctx.replyWithVoice(new InputFile(speechBuffer, "response.mp3"));
         } catch (ttsError) {
-            console.warn("⚠️ TTS failed, falling back to text only:", ttsError);
-            // Fallback: send text directly if voice fails
-            if (agentResponse.length <= 4096) {
-                await ctx.reply(agentResponse);
-            } else {
-                const chunks = splitMessage(agentResponse, 4096);
-                for (const chunk of chunks) {
-                    await ctx.reply(chunk);
+            indicator.stop();
+            console.warn("⚠️ TTS failed:", ttsError);
+        }
+
+        // 6. Send the text response alongside the voice (or as fallback)
+        if (agentResult.text.length <= 4096) {
+            const sent = await ctx.reply(agentResult.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(agentResult.text));
+            if (sent) trackBotMessage(String(chatId), sent.message_id, agentResult.text);
+        } else {
+            const chunks = splitMessage(agentResult.text, 4096);
+            for (const chunk of chunks) {
+                const sent = await ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk));
+                if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
+            }
+        }
+
+        // 7. Send Media (e.g. Canvas Screenshots)
+        if (agentResult.media && agentResult.media.length > 0) {
+            for (const media of agentResult.media) {
+                if (media.type === "image") {
+                    await sendTelegramPhoto(String(chatId), media.buffer, media.caption);
                 }
             }
         }
 
-        console.log(`✅ [${chatId}] Response sent (fallback to text if voice failed)`);
+        console.log(`✅ [${chatId}] Voice + text response sent`);
     } catch (error: any) {
+        indicator.stop();
         console.error("❌ Voice process error:", error);
         if (error.message?.includes("invalid_api_key") || error.message?.includes("API key")) {
             await ctx.reply("❌ Erro nas chaves de API. Por favor, verifique se a `GROQ_API_KEY` no arquivo `.env` é válida.");
@@ -148,9 +181,10 @@ bot.on("message:photo", async (ctx) => {
 
     console.log(`📷 [${chatId}] Photo received${caption ? ` (caption: "${caption.substring(0, 50)}...")` : ""}`);
 
-    try {
-        await ctx.replyWithChatAction("typing");
+    const indicator = new TypingIndicator(ctx, "typing");
+    await indicator.start();
 
+    try {
         // 1. Download highest resolution photo
         const photos = ctx.message.photo;
         const bestPhoto = photos[photos.length - 1]; // Last = highest res
@@ -177,23 +211,33 @@ bot.on("message:photo", async (ctx) => {
         }
 
         // 4. Process through agent
-        await ctx.replyWithChatAction("typing");
-        const response = await runAgent(String(chatId), agentMessage);
+        const result = await runAgent(String(chatId), agentMessage);
 
-        // 5. Send response
-        if (response.length <= 4096) {
-            const sent = await ctx.reply(response, { parse_mode: "Markdown" }).catch(() => ctx.reply(response));
-            if (sent) trackBotMessage(String(chatId), sent.message_id, response);
+        // 5. Send response text
+        indicator.stop();
+        if (result.text.length <= 4096) {
+            const sent = await ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(result.text));
+            if (sent) trackBotMessage(String(chatId), sent.message_id, result.text);
         } else {
-            const chunks = splitMessage(response, 4096);
+            const chunks = splitMessage(result.text, 4096);
             for (const chunk of chunks) {
                 const sent = await ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk));
                 if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
             }
         }
 
-        console.log(`✅ [${chatId}] Photo processed: ${ocr.text.length} chars extracted (${ocr.engine}), response ${response.length} chars`);
+        // 6. Send Media (e.g. Canvas Screenshots)
+        if (result.media && result.media.length > 0) {
+            for (const media of result.media) {
+                if (media.type === "image") {
+                    await sendTelegramPhoto(String(chatId), media.buffer, media.caption);
+                }
+            }
+        }
+
+        console.log(`✅ [${chatId}] Photo processed: ${ocr.text.length} chars extracted (${ocr.engine}), response ${result.text.length} chars, ${result.media?.length || 0} media`);
     } catch (error) {
+        indicator.stop();
         console.error(`❌ [${chatId}] Photo error:`, error);
         await ctx.reply("❌ Erro ao processar a imagem. Tente novamente.");
     }
@@ -260,32 +304,177 @@ function splitMessage(text: string, maxLength: number): string[] {
     return chunks;
 }
 
-// ─── Lifecycle ───────────────────────────────────────────────────────
-export function startBot(): void {
-    bot.start({
-        allowed_updates: ["message", "message_reaction", "callback_query"],
-        onStart: async (botInfo) => {
-            console.log(`⚡ Gravity Claw is online as @${botInfo.username}`);
-            console.log(`🔒 Whitelisted users: ${config.allowedUserIds.join(", ")}`);
+export async function sendTelegramMessage(chatId: string, text: string) {
+    if (!config.allowedUserIds.includes(Number(chatId))) return;
+    try {
+        await bot.api.sendMessage(chatId, text, { parse_mode: "Markdown" });
+    } catch (err) {
+        console.error(`❌ Failed to send message to ${chatId}:`, err);
+    }
+}
 
-            // Notify Rafael/Admins that the daemon is active
-            for (const userId of config.allowedUserIds) {
-                try {
-                    await bot.api.sendMessage(userId, "🚀 *Gravity Claw reativado.*\nO sistema está em funcionamento em segundo plano.", { parse_mode: "Markdown" });
-                } catch (err) {
-                    console.warn(`⚠️ Could not notify user ${userId} on startup (maybe bot hasn't chatted with them yet?)`);
-                }
+export async function sendTelegramPhoto(chatId: string, photo: string | Buffer, caption?: string) {
+    if (!config.allowedUserIds.includes(Number(chatId))) return;
+    try {
+        const inputFile = typeof photo === "string" ? photo : new InputFile(photo, "chart.png");
+        await bot.api.sendPhoto(chatId, inputFile, {
+            caption,
+            parse_mode: "Markdown"
+        });
+    } catch (err) {
+        console.error(`❌ Failed to send photo to ${chatId}:`, err);
+    }
+}
+
+import { registerTool } from "./tools/registry.js";
+registerTool({
+    name: "send_voice_message",
+    description: "Generates an audio message using Text-to-Speech and sends it directly to the user's Telegram chat. Use this ONLY when the user explicitly asks you to speak, say something, send an audio, or test the voice system.",
+    parameters: {
+        type: "object",
+        properties: {
+            text_to_speak: {
+                type: "string",
+                description: "The exact text you want to be synthesized into speech and sent as audio."
+            },
+            chatId: {
+                type: "string",
+                description: "The chat ID of the user (must pass the chatId from the current context)."
             }
         },
-    });
+        required: ["text_to_speak", "chatId"]
+    },
+    execute: async ({ text_to_speak, chatId }) => {
+        try {
+            const buffer = await synthesizeSpeech(String(text_to_speak));
+            const inputFile = new InputFile(buffer, "voice.mp3");
+            await bot.api.sendVoice(String(chatId), inputFile, {
+                caption: "🎤 Áudio gravado!",
+                parse_mode: "Markdown"
+            });
+            return `Voice message successfully sent. Do not output the audio content again in your text response to avoid redundancy.`;
+        } catch (e: any) {
+            return `Failed to send voice message: ${e.message}`;
+        }
+    }
+});
+
+bot.catch((err) => {
+    const ctx = err.ctx;
+    console.error(`[Bot Error] Update ${ctx.update.update_id}:`);
+    const e = err.error;
+    if (e instanceof GrammyError) {
+        console.error("Error in request:", e.description);
+        if (e.error_code === 409) {
+            console.error("⚠️ Sensor: Conflito 409 - Outra instância (provavelmente em outra máquina) está conectada ao Telegram. O Telegram derrubou a nossa.");
+        }
+    } else if (e instanceof HttpError) {
+        console.error("Could not contact Telegram:", e.message);
+    } else {
+        console.error("Unknown error:", e);
+    }
+});
+
+// ─── Lifecycle & Sensors ─────────────────────────────────────────────
+
+const LOCK_FILE = join(tmpdir(), "gravity_claw.lock");
+
+export async function startBot(): Promise<void> {
+    // 🛡️ Sensor 1: Instância Única (Singleton)
+    // Garantir que apenas UMA instância do bot rode na mesma máquina
+    if (existsSync(LOCK_FILE)) {
+        try {
+            const oldPid = parseInt(readFileSync(LOCK_FILE, "utf-8"), 10);
+            if (oldPid !== process.pid) {
+                console.log(`⚠️ Sensor de Instância: Processo antigo detectado (PID ${oldPid}).`);
+                try {
+                    process.kill(oldPid, 0); // Testa se o processo ainda existe
+                    console.log(`🔪 Finalizando processo antigo para manter APENAS ESTA instância ativa...`);
+                    process.kill(oldPid);
+                } catch (e) {
+                    // Processo já morreu, o lock é fantasma
+                    console.log(`🧹 Limpando lock fantasma antigo...`);
+                }
+            }
+        } catch (e) {
+            console.error("Erro ao verificar lock da instância:", e);
+        }
+    }
+    // Grava o próprio PID como o ativo
+    writeFileSync(LOCK_FILE, String(process.pid), "utf-8");
+
+    // 🌐 Sensor 2: Monitor de Rede e Auto-Reconexão
+    let isConnected = true;
+
+    async function checkNetwork() {
+        try {
+            // Tenta resolver o DNS do Telegram. Se passar, tem internet
+            await dns.lookup("api.telegram.org");
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    async function pollingLoop() {
+        while (true) {
+            const hasNetwork = await checkNetwork();
+
+            if (!hasNetwork) {
+                if (isConnected) {
+                    console.log("\n🌐 Sensor de Rede: 🔴 Conexão com a internet foi perdida. Aguardando rede voltar...");
+                    isConnected = false;
+                }
+                await new Promise(res => setTimeout(res, 5000));
+                continue;
+            }
+
+            if (!isConnected) {
+                console.log("\n🌐 Sensor de Rede: 🟢 Conexão restabelecida! Reiniciando bot...");
+                isConnected = true;
+            }
+
+            try {
+                // Ao usar drop_pending_updates, ignoramos mensagens encavaladas e evitamos crashs 409 no start
+                await bot.start({
+                    allowed_updates: ["message", "message_reaction", "callback_query"],
+                    drop_pending_updates: true,
+                    onStart: async (botInfo) => {
+                        console.log(`⚡ Gravity Claw is online as @${botInfo.username}`);
+                        console.log(`🔒 Whitelisted users: ${config.allowedUserIds.join(", ")}`);
+                        // Notificar que inicializou
+                        for (const userId of config.allowedUserIds) {
+                            try {
+                                await bot.api.sendMessage(userId, "🚀 *Gravity Claw reativado.*\nO sistema superou a reinicialização/rede e está em funcionamento no plano de fundo.", { parse_mode: "Markdown" });
+                            } catch (err) {
+                                // Ignore
+                            }
+                        }
+                    }
+                });
+                break; // bot.start() bloqueia infinito se der tudo certo. Só sai daqui em erro crítico irrecuperável que a grammY decida cuspir.
+            } catch (err: any) {
+                console.error(`🛑 GrammyY Polling desarmou: ${err.message}. Sensor reiniciando em 5s...`);
+                await bot.stop();
+                await new Promise(res => setTimeout(res, 5000));
+            }
+        }
+    }
+
+    // Inicia o loop infinito à prova de balas
+    pollingLoop();
 }
 
 // Graceful shutdown
 function shutdown(signal: string): void {
     console.log(`\n🛑 Received ${signal}, shutting down...`);
+    if (existsSync(LOCK_FILE)) {
+        try { unlinkSync(LOCK_FILE); } catch (e) { }
+    }
     bot.stop();
     process.exit(0);
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+
