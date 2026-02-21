@@ -15,6 +15,16 @@ import "./finance/finance-tools.js"; // 💰 CFO pessoal — 19 finance tools
 import "./canvas/tool.js"; // 🎨 Live Canvas Tool
 import { registerSessionTools } from "./sessions/tools.js"; // 🤖 Agent-to-Agent Sessions
 registerSessionTools();
+
+// 🔔 Smart Recommendations — proactive suggestions based on behavior patterns
+import "./tools/recommendations.js";
+console.log("🔔 Smart Recommendations enabled");
+
+// 🛡️ Encrypted Secrets — AES-256 encrypted API key storage
+import { registerSecretTools } from "./tools/secrets.js";
+registerSecretTools();
+console.log("🛡️ Encrypted Secrets enabled");
+
 // Start Live Canvas WebSocket Server
 import { startCanvasServer } from "./canvas/server.js";
 startCanvasServer();

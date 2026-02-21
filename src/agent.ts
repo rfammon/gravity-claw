@@ -3,6 +3,7 @@ import { chat, type Message } from "./llm.js";
 import { getTool } from "./tools/registry.js";
 import { saveMessage, getChatHistory, getFacts, getFeedbackSummary, getLatestJudgments } from "./db-provider.js";
 import { cachedSkills } from "./skills.js";
+import { analyzeMessageForPatterns } from "./recommendations.js";
 
 const MAX_ITERATIONS = 10;
 
@@ -19,6 +20,9 @@ export async function runAgent(
   chatId: string,
   userMessage: string
 ): Promise<AgentResult> {
+  // 0. Track behavior patterns for proactive recommendations
+  analyzeMessageForPatterns(chatId, userMessage);
+  
   // 1. Get history from DB (limit to last 15 messages to save tokens and maintain concise context)
   const history = (await getChatHistory(chatId, 15)) as Message[];
 
