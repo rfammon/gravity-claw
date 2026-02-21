@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { runAgent } from "./agent.js";
 import { saveMessage } from "./db-provider.js";
 import { sendTelegramMessage, sendTelegramPhoto } from "./bot.js";
+import { generateDailyJudgment, generateWeeklyJudgment } from "./judgment.js";
 import * as db from "./finance/finance-db.js";
 import * as calc from "./finance/finance-calculator.js";
 import { generateCategoryChartUrl } from "./finance/finance-charts.js";
@@ -116,6 +117,27 @@ export function setupDefaultTasks(chatId: string) {
             console.log(`📊 Monthly finance summary sent for ${chatId}`);
         } catch (err) {
             console.error(`❌ Monthly summary error for ${chatId}:`, err);
+        }
+    });
+
+    // ── Judgment Scheduled Tasks ──────────────────────────────────────
+    // Daily Judgment (Bot's Diary) - at 11:50 PM
+    scheduler.schedule(`${chatId}_daily_judgment`, "50 23 * * *", async () => {
+        try {
+            await generateDailyJudgment(chatId);
+            console.log(`🧠 Daily judgment generated for ${chatId}`);
+        } catch (err) {
+            console.error(`❌ Daily judgment error for ${chatId}:`, err);
+        }
+    });
+
+    // Weekly Judgment Deep Dive - Sunday at 11:55 PM
+    scheduler.schedule(`${chatId}_weekly_judgment`, "55 23 * * 0", async () => {
+        try {
+            await generateWeeklyJudgment(chatId);
+            console.log(`🧠 Weekly judgment generated for ${chatId}`);
+        } catch (err) {
+            console.error(`❌ Weekly judgment error for ${chatId}:`, err);
         }
     });
 }

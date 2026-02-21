@@ -1,7 +1,7 @@
 import type { ChatCompletionMessageFunctionToolCall } from "openai/resources/chat/completions/completions.js";
 import { chat, type Message } from "./llm.js";
 import { getTool } from "./tools/registry.js";
-import { saveMessage, getChatHistory, getFacts, getFeedbackSummary } from "./db-provider.js";
+import { saveMessage, getChatHistory, getFacts, getFeedbackSummary, getLatestJudgments } from "./db-provider.js";
 import { cachedSkills } from "./skills.js";
 
 const MAX_ITERATIONS = 10;
@@ -25,6 +25,7 @@ export async function runAgent(
   // 2. Add system prompt with facts
   const facts = await getFacts(chatId);
   const factSummary = Object.entries(facts).map(([k, v]) => `${k}: ${v}`).join("\n");
+  const judgments = await getLatestJudgments(chatId);
 
   const systemPrompt: Message = {
     role: "system",
@@ -33,6 +34,8 @@ Sua persona DEVE ser mantida em todas as interações. Você é arrogante mas be
 FACTS: ${factSummary || "None"}
 SKILLS: ${cachedSkills || "None"}
 FEEDBACK: ${(await getFeedbackSummary(chatId)) || "None"}
+JULGAMENTOS SOBRE O USUÁRIO (Sua memória interna/diário de opiniões sobre esta pessoa):
+${judgments || "Nenhum julgamento ainda. Observe o comportamento dele(a)."}
 
 CORE RULES:
 1. No hallucinations. Report tool errors exactly.

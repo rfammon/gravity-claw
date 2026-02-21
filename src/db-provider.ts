@@ -29,6 +29,11 @@ export interface IMemoryProvider {
     trackBotMessage(chatId: string, messageId: number, responseText: string): void | Promise<void>;
     saveFeedback(chatId: string, messageId: number, signal: string, emoji: string): void | Promise<void>;
     getFeedbackSummary(chatId: string): string | Promise<string>;
+
+    saveJudgment(chatId: string, type: "daily" | "weekly", opinion: string, periodStart: string, periodEnd: string): void | Promise<void>;
+    getLatestJudgments(chatId: string): string | Promise<string>;
+    getMemoriesSince(chatId: string, sinceDateISO: string): MemoryEntry[] | Promise<MemoryEntry[]>;
+    getJudgmentsSince(chatId: string, type: "daily", sinceDateISO: string): { opinion: string; timestamp: string }[] | Promise<{ opinion: string; timestamp: string }[]>;
 }
 
 // ── Provider Selection ───────────────────────────────────────────────
@@ -53,6 +58,11 @@ if (config.supabaseUrl && config.supabaseServiceKey) {
         trackBotMessage: mem.trackBotMessage,
         saveFeedback: mem.saveFeedback,
         getFeedbackSummary: mem.getFeedbackSummary,
+
+        saveJudgment: mem.saveJudgment,
+        getLatestJudgments: mem.getLatestJudgments,
+        getMemoriesSince: mem.getMemoriesSince,
+        getJudgmentsSince: mem.getJudgmentsSince,
     };
 }
 
@@ -67,3 +77,8 @@ export const clearHistory = db.clearHistory.bind(db);
 export const trackBotMessage = db.trackBotMessage.bind(db);
 export const saveFeedback = db.saveFeedback.bind(db);
 export const getFeedbackSummary = db.getFeedbackSummary.bind(db);
+
+export const saveJudgment = db.saveJudgment.bind(db);
+export const getLatestJudgments = db.getLatestJudgments.bind(db);
+export const getMemoriesSince = db.getMemoriesSince.bind(db);
+export const getJudgmentsSince = db.getJudgmentsSince.bind(db);

@@ -167,4 +167,94 @@ export class SupabaseMemory {
 
         return summary;
     }
+
+    // ── Judgment Memory (Bot's Diary) ────────────────────────
+
+    async saveJudgment(chatId: string, type: "daily" | "weekly", opinion: string, periodStart: string, periodEnd: string): Promise<void> {
+        const { error } = await getClient()
+            .from("user_judgments")
+            .insert({
+                chat_id: chatId,
+                type,
+                opinion,
+                period_start: periodStart,
+                period_end: periodEnd,
+            });
+
+        if (error) console.error("❌ Supabase saveJudgment:", error.message);
+        else console.log(`🧠 Judgment saved (Supabase/ ${type}) for ${chatId}`);
+    }
+
+    async getLatestJudgments(chatId: string): Promise<string> {
+        const { data: weeklyData } = await getClient()
+            .from("user_judgments")
+            .select("opinion, created_at")
+            .eq("chat_id", chatId)
+            .eq("type", "weekly")
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+        const { data: dailyData } = await getClient()
+            .from("user_judgments")
+            .select("opinion, created_at")
+            .eq("chat_id", chatId)
+            .eq("type", "daily")
+            .order("created_at", { ascending: false })
+            .limit(3);
+
+        const latestWeekly = weeklyData?.[0];
+        const recentDailies = dailyData ?? [];
+
+        let summary = "";
+        if (latestWeekly) {
+            summary += `📌 Avaliação Semanal Profunda (${latestWeekly.created_at}):\n${latestWeekly.opinion}\n\n`;
+        }
+
+        if (recentDailies.length > 0) {
+            summary += `📝 Diários Recentes:\n`;
+            recentDailies.forEach(d => summary += `- [${d.created_at}] ${d.opinion}\n`);
+        }
+
+        return summary;
+    }
+
+    async getMemoriesSince(chatId: string, sinceDateISO: string): Promise<MemoryEntry[]> {
+        const { data, error } = await getClient()
+            .from("memories")
+            .select("role, content, created_at")
+            .eq("chat_id", chatId)
+            .gte("created_at", sinceDateISO)
+            .order("created_at", { ascending: true });
+
+        if (error) {
+            console.error("❌ Supabase getMemoriesSince:", error.message);
+            return [];
+        }
+
+        return (data ?? []).map((row) => ({
+            role: row.role as MemoryEntry["role"],
+            content: row.content,
+            timestamp: row.created_at,
+        }));
+    }
+
+    async getJudgmentsSince(chatId: string, type: "daily", sinceDateISO: string): Promise<{ opinion: string; timestamp: string }[]> {
+        const { data, error } = await getClient()
+            .from("user_judgments")
+            .select("opinion, created_at")
+            .eq("chat_id", chatId)
+            .eq("type", type)
+            .gte("created_at", sinceDateISO)
+            .order("created_at", { ascending: true });
+
+        if (error) {
+            console.error("❌ Supabase getJudgmentsSince:", error.message);
+            return [];
+        }
+
+        return (data ?? []).map((row) => ({
+            opinion: row.opinion,
+            timestamp: row.created_at,
+        }));
+    }
 }

@@ -11,10 +11,10 @@ import "./tools/web-search.js";
 import "./tools/trello.js";
 import "./tools/registry.js"; // This now registers browser_url
 import "./code-agent.js"; // GLM-5 code specialist sub-agent
-import "./finance-agent.js"; // GLM-5 finance specialist sub-agent
 import "./finance/finance-tools.js"; // 💰 CFO pessoal — 19 finance tools
 import "./canvas/tool.js"; // 🎨 Live Canvas Tool
-
+import { registerSessionTools } from "./sessions/tools.js"; // 🤖 Agent-to-Agent Sessions
+registerSessionTools();
 // Start Live Canvas WebSocket Server
 import { startCanvasServer } from "./canvas/server.js";
 startCanvasServer();

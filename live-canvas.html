@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Canvas</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        #container {
+            width: 90%;
+            max-width: 1200px;
+            background: #2a2a2a;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            padding: 2rem;
+            min-height: 50vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        .status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+        .connected {
+            background-color: #2ecc71;
+            color: #000;
+        }
+        .disconnected {
+            background-color: #e74c3c;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="status" class="status disconnected">Disconnected</div>
+    
+    <div id="container">
+        <h2 style="color: #666;">Waiting for MEGAMIND...</h2>
+    </div>
+
+    <script>
+        const container = document.getElementById('container');
+        const statusEl = document.getElementById('status');
+        let ws;
+
+        function connect() {
+            // Updated to port 8081
+            ws = new WebSocket('ws://localhost:8081');
+
+            ws.onopen = () => {
+                console.log('Connected to Live Canvas Server');
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'status connected';
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Received payload:', data);
+                    
+                    if (data.type === 'html' || data.type === 'form' || data.type === 'chart' || data.type === 'table') {
+                        // Very simple injection for now
+                        container.innerHTML = data.content;
+                        
+                        // Execute any scripts that came with the payload
+                        const scripts = container.getElementsByTagName('script');
+                        for (let i = 0; i < scripts.length; i++) {
+                            eval(scripts[i].innerText);
+                        }
+                    } else {
+                        console.log('Unknown payload type:', data.type);
+                    }
+                } catch (err) {
+                    console.error('Failed to parse message:', err);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('Disconnected from server. Reconnecting in 3s...');
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'status disconnected';
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error('WebSocket Error:', err);
+            };
+        }
+
+        connect();
+    </script>
+</body>
+</html>

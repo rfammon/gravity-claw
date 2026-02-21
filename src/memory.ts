@@ -56,6 +56,16 @@ db.exec(`
     emoji TEXT NOT NULL,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS user_judgments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT NOT NULL,
+    type TEXT NOT NULL CHECK( type IN ('daily', 'weekly') ),
+    period_start DATETIME NOT NULL,
+    period_end DATETIME NOT NULL,
+    opinion TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 export interface MemoryEntry {
@@ -153,4 +163,50 @@ export function getFeedbackSummary(chatId: string): string {
     }
 
     return summary;
+}
+
+// ── Judgment Memory (Bot's Diary) ────────────────────────
+
+export function saveJudgment(chatId: string, type: "daily" | "weekly", opinion: string, periodStart: string, periodEnd: string): void {
+    const stmt = db.prepare(`
+        INSERT INTO user_judgments (chat_id, type, opinion, period_start, period_end) 
+        VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(chatId, type, opinion, periodStart, periodEnd);
+    console.log(`🧠 Judgment saved (${type}) for ${chatId}`);
+}
+
+export function getLatestJudgments(chatId: string): string {
+    const weeklyStmt = db.prepare("SELECT opinion, timestamp FROM user_judgments WHERE chat_id = ? AND type = 'weekly' ORDER BY timestamp DESC LIMIT 1");
+    const dailyStmt = db.prepare("SELECT opinion, timestamp FROM user_judgments WHERE chat_id = ? AND type = 'daily' ORDER BY timestamp DESC LIMIT 3");
+
+    const latestWeekly = weeklyStmt.get(chatId) as { opinion: string; timestamp: string } | undefined;
+    const recentDailies = dailyStmt.all(chatId) as { opinion: string; timestamp: string }[];
+
+    let summary = "";
+    if (latestWeekly) {
+        summary += `📌 Avaliação Semanal Profunda (${latestWeekly.timestamp}):\n${latestWeekly.opinion}\n\n`;
+    }
+
+    if (recentDailies.length > 0) {
+        summary += `📝 Diários Recentes:\n`;
+        recentDailies.forEach(d => summary += `- [${d.timestamp}] ${d.opinion}\n`);
+    }
+
+    return summary;
+}
+
+export function getMemoriesSince(chatId: string, sinceDateISO: string): MemoryEntry[] {
+    const stmt = db.prepare("SELECT role, content, timestamp FROM memories WHERE chat_id = ? AND timestamp >= ? ORDER BY timestamp ASC");
+    const rows = stmt.all(chatId, sinceDateISO) as any[];
+    return rows.map((row) => ({
+        role: row.role as any,
+        content: row.content,
+        timestamp: row.timestamp
+    }));
+}
+
+export function getJudgmentsSince(chatId: string, type: "daily", sinceDateISO: string): { opinion: string; timestamp: string }[] {
+    const stmt = db.prepare("SELECT opinion, timestamp FROM user_judgments WHERE chat_id = ? AND type = ? AND timestamp >= ? ORDER BY timestamp ASC");
+    return stmt.all(chatId, type, sinceDateISO) as any[];
 }

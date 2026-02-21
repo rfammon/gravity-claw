@@ -16,32 +16,16 @@ function getModalClient(): OpenAI {
 }
 
 // ── Finance Agent Runner ─────────────────────────────────────
-export async function runFinanceAgent(task: string): Promise<string> {
+export async function runFinanceAgent(history: OpenAI.Chat.Completions.ChatCompletionMessageParam[]): Promise<string> {
     const client = getModalClient();
 
-    console.log(`⚡ Finance Agent (${FINANCE_MODEL}) processing task...`);
+    console.log(`⚡ Finance Agent (${FINANCE_MODEL}) processing task (History length: ${history.length})...`);
     const startTime = Date.now();
 
     const response = await client.chat.completions.create({
         model: FINANCE_MODEL,
         max_tokens: 8192,
-        messages: [
-            {
-                role: "system",
-                content: `Você é um planejador financeiro, economista chefe e agente autônomo. Você é especialista em traçar projetos financeiros, planos de fuga de dívidas e construção de reservas de emergência.
-
-REGRAS:
-1. Pense detalhadamente. Forneça planos mensuráveis (com valores tangíveis) baseados sempre na demanda do usuário.
-2. Analise os cenários usando lógica econômica sólida.
-3. Esteja focado em respostas assertivas, práticas e diretas para quem quer melhorar de vida.
-4. Você deve agir como um conselheiro "CFO" financeiro premium.
-5. Sempre responda em pt-BR de forma clara e profissional. Use markdown para deixar a leitura fácil e bonita.`
-            },
-            {
-                role: "user",
-                content: task
-            }
-        ],
+        messages: history,
     });
 
     const elapsed = Date.now() - startTime;
@@ -66,7 +50,21 @@ registerTool({
     },
     execute: async ({ task }) => {
         try {
-            return await runFinanceAgent(task as string);
+            const systemPrompt = `Você é um planejador financeiro, economista chefe e agente autônomo. Você é especialista em traçar projetos financeiros, planos de fuga de dívidas e construção de reservas de emergência.
+
+REGRAS:
+1. Pense detalhadamente. Forneça planos mensuráveis (com valores tangíveis) baseados sempre na demanda do usuário.
+2. Analise os cenários usando lógica econômica sólida.
+3. Esteja focado em respostas assertivas, práticas e diretas para quem quer melhorar de vida.
+4. Você deve agir como um conselheiro "CFO" financeiro premium.
+5. Sempre responda em pt-BR de forma clara e profissional. Use markdown para deixar a leitura fácil e bonita.`;
+
+            const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: task as string }
+            ];
+
+            return await runFinanceAgent(history);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             console.error(`❌ Finance Agent error: ${msg}`);
@@ -74,3 +72,4 @@ registerTool({
         }
     }
 });
+
