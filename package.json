@@ -1,11 +1,15 @@
 {
     "name": "gravity-claw",
-    "version": "1.0.0",
-    "description": "Lean, secure personal AI agent — Telegram + Claude + agentic tool loop",
+    "version": "1.1.0",
+    "description": "Lean, secure personal AI agent — Telegram + agentic tool loop — Android/Linux compatible",
     "type": "module",
     "scripts": {
         "dev": "tsx watch src/index.ts",
-        "start": "tsx src/index.ts"
+        "start": "tsx src/index.ts",
+        "start:android": "LOW_RESOURCE_MODE=true tsx src/index.ts",
+        "check": "npx tsc --noEmit",
+        "install:linux": "chmod +x scripts/install-linux.sh && ./scripts/install-linux.sh",
+        "postinstall": "node scripts/postinstall.js 2>/dev/null || true"
     },
     "dependencies": {
         "@heyputer/puter.js": "^2.2.10",
@@ -24,6 +28,7 @@
         "node-edge-tts": "^1.2.10",
         "openai": "^6.22.0",
         "playwright": "^1.58.2",
+        "sql.js": "^1.10.3",
         "tesseract.js": "^7.0.0",
         "ws": "^8.19.0"
     },
@@ -34,5 +39,17 @@
         "tsx": "^4.19.3",
         "typescript": "^5.7.3",
         "vitest": "^3.0.5"
-    }
+    },
+    "optionalDependencies": {
+        "puppeteer": "^22.0.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "os": [
+        "linux",
+        "darwin",
+        "win32",
+        "android"
+    ]
 }

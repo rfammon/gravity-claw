@@ -1,8 +1,16 @@
 // ─── Gravity Claw — Entry Point ──────────────────────────────────────
-// Load config first (validates env vars — will exit if anything is missing)
+// Platform detection first (validates runtime environment)
+import { logPlatformInfo, getPlatformConfig } from "./platform.js";
+await logPlatformInfo();
+
+// Load config (validates env vars — will exit if anything is missing)
 import { config } from "./config.js";
 import { setupDefaultTasks, setupGlobalTasks } from "./scheduler.js";
 import { loadSkills } from "./skills.js";
+
+// Get platform-specific configuration
+const platformConfig = await getPlatformConfig();
+console.log(`🔧 Platform config: DB=${platformConfig.dbBackend}, Browser=${platformConfig.enableBrowserTool ? 'enabled' : 'disabled'}`);
 
 // Register tools
 console.log("🔧 Loading tools...");
