@@ -107,6 +107,9 @@ export const config = {
     
     // ── Puter (Code Agent Fallback) ────────────────────────
     puterDefaultModel,
+    
+    // ── Puter Token ─────────────────────────────────────────
+    puterToken: process.env.PUTER_TOKEN || "",
 } as const;
 
 // Validation

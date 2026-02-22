@@ -33,11 +33,33 @@ function getOpenRouterClient(): OpenAI {
 }
 
 // ── Puter Client (Primary) ─────────────────────────────────────────
-async function getPuterClient(): Promise<any> {
+async function getPuterClient(authToken?: string): Promise<any> {
     if (!puterModule) {
-        puterModule = await import("@heyputer/puter.js");
+        puterModule = await import("@heyputer/puter.js/src/init.cjs");
     }
-    return puterModule.default;
+    
+    const { init } = puterModule;
+    
+    // Try to get token from:
+    // 1. Parameter
+    // 2. Environment variable
+    // 3. Saved token file
+    let token = authToken || process.env.PUTER_TOKEN;
+    
+    if (!token) {
+        try {
+            const fs = await import("fs");
+            const tokenPath = "./.puter-token";
+            if (fs.existsSync(tokenPath)) {
+                token = fs.readFileSync(tokenPath, "utf-8").trim();
+                console.log("📂 Loaded Puter token from .puter-token file");
+            }
+        } catch {
+            // Ignore - token file doesn't exist
+        }
+    }
+    
+    return init(token || undefined);
 }
 
 // ─── System Prompt for Code Agent ─────────────────────────────────
