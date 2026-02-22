@@ -61,7 +61,7 @@ bot.on("message:text", async (ctx) => {
     await typing.start();
 
     try {
-        const result = await runAgent(String(chatId), text);
+        const result = await runAgent(String(chatId), text, ctx.from?.id);
         typing.stop();
 
         // Send Text
@@ -127,7 +127,7 @@ bot.on("message:voice", async (ctx) => {
 
         // 3. Process through agent
         const agentMessage = `[🎙️ Mensagem de Voz] ${transcription}`;
-        const agentResult = await runAgent(String(chatId), agentMessage);
+        const agentResult = await runAgent(String(chatId), agentMessage, ctx.from?.id);
 
         // 4. Generate voice response from the text part
         indicator.setAction("record_voice");
@@ -212,7 +212,7 @@ bot.on("message:photo", async (ctx) => {
         }
 
         // 4. Process through agent
-        const result = await runAgent(String(chatId), agentMessage);
+        const result = await runAgent(String(chatId), agentMessage, ctx.from?.id);
 
         // 5. Send response text
         indicator.stop();

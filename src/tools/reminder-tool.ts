@@ -50,8 +50,8 @@ export function registerReminderTools(): void {
                     throw new Error("O lembrete deve ser para o futuro.");
                 }
 
-                const chatId = String(ctx?.chat?.id || "unknown");
-                const userId = ctx?.from?.id || 0;
+                const chatId = String(ctx?.chatId || "unknown");
+                const userId = ctx?.userId || 0;
 
                 await createReminder(chatId, userId, String(text), targetDate);
 

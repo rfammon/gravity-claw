@@ -18,7 +18,8 @@ export interface AgentResult {
 
 export async function runAgent(
   chatId: string,
-  userMessage: string
+  userMessage: string,
+  userId?: number
 ): Promise<AgentResult> {
   // 0. Track behavior patterns for proactive recommendations
   analyzeMessageForPatterns(chatId, userMessage);
@@ -120,7 +121,7 @@ FORMATTING:
         resultText = JSON.stringify({ error: "Unknown tool: " + fnName });
       } else {
         try {
-          const ctx = { chatId };
+          const ctx = { chatId, userId };
           const rawResult = await tool.execute(fnArgs, ctx);
           if (typeof rawResult === 'string') {
             resultText = rawResult;
