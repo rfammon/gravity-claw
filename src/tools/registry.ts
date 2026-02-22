@@ -15,7 +15,7 @@ export interface Tool {
     name: string;
     description: string;
     parameters: Record<string, unknown>; // JSON Schema
-    execute: (input: Record<string, unknown>) => Promise<string | ToolResult>;
+    execute: (input: Record<string, unknown>, ctx?: any) => Promise<string | ToolResult>;
 }
 
 // ── registry ─────────────────────────────────────────────

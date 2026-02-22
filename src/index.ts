@@ -35,7 +35,9 @@ console.log("🛡️ Encrypted Secrets enabled");
 
 // ☁️ Supabase Tools — Native database access for agents
 import { registerSupabaseTools } from "./tools/supabase-tool.js";
+import { registerReminderTools } from "./tools/reminder-tool.js";
 registerSupabaseTools();
+registerReminderTools();
 console.log("☁️ Supabase Tools enabled");
 
 // Start Live Canvas WebSocket Server

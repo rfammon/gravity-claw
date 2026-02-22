@@ -12,12 +12,30 @@ async function getBrowser(): Promise<Browser> {
     return browserInstance;
 }
 
-export async function renderHtmlToImage(html: string): Promise<Buffer> {
+export async function renderHtmlToImage(content: string, type: string = 'html'): Promise<Buffer> {
     const browser = await getBrowser();
     const context = await browser.newContext({
         viewport: { width: 800, height: 600 },
         deviceScaleFactor: 2, // High DPI for better readability
     });
+
+    // Determine the actual HTML to render
+    let finalContent = content;
+    if (type === 'chart') {
+        finalContent = `
+            <canvas id="myChart" style="width: 100%; height: 400px;"></canvas>
+            <script>
+                (function() {
+                    try {
+                        const config = ${content};
+                        new Chart(document.getElementById('myChart'), config);
+                    } catch (e) {
+                        document.body.innerHTML += '<p style="color:red">Chart error: ' + e.message + '</p>';
+                    }
+                })();
+            </script>
+        `;
+    }
 
     // Create a very generic dark mode wrapper to ensure widgets look good
     const wrappedHtml = `
@@ -25,6 +43,7 @@ export async function renderHtmlToImage(html: string): Promise<Buffer> {
     <html>
     <head>
         <meta charset="UTF-8">
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
             body {
                 background-color: #1a1a1a;
@@ -52,7 +71,7 @@ export async function renderHtmlToImage(html: string): Promise<Buffer> {
     </head>
     <body>
         <div class="canvas-container" id="target-element">
-            ${html}
+            ${finalContent}
         </div>
         <script>
             // Easiest way to force any embedded scripts to execute

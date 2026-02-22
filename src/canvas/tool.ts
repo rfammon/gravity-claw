@@ -34,7 +34,7 @@ export const pushToCanvasTool: Tool = {
         try {
             // 2. Headless screenshot
             console.log(`📸 Taking snapshot of the Canvas HTML...`);
-            const imageBuffer = await renderHtmlToImage(String(content));
+            const imageBuffer = await renderHtmlToImage(String(content), String(type));
 
             // Return complex result
             return {

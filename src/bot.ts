@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import dns from "node:dns/promises";
 
-const bot = new Bot(config.telegramToken);
+import { bot } from "./telegram-client.js";
+import { sendTelegramPhoto } from "./telegram-utils.js";
 
 // ─── Whitelist Middleware ────────────────────────────────────────────
 // Security: silently ignore messages from non-whitelisted users
@@ -304,27 +305,7 @@ function splitMessage(text: string, maxLength: number): string[] {
     return chunks;
 }
 
-export async function sendTelegramMessage(chatId: string, text: string) {
-    if (!config.allowedUserIds.includes(Number(chatId))) return;
-    try {
-        await bot.api.sendMessage(chatId, text, { parse_mode: "Markdown" });
-    } catch (err) {
-        console.error(`❌ Failed to send message to ${chatId}:`, err);
-    }
-}
-
-export async function sendTelegramPhoto(chatId: string, photo: string | Buffer, caption?: string) {
-    if (!config.allowedUserIds.includes(Number(chatId))) return;
-    try {
-        const inputFile = typeof photo === "string" ? photo : new InputFile(photo, "chart.png");
-        await bot.api.sendPhoto(chatId, inputFile, {
-            caption,
-            parse_mode: "Markdown"
-        });
-    } catch (err) {
-        console.error(`❌ Failed to send photo to ${chatId}:`, err);
-    }
-}
+// sendTelegramMessage and sendTelegramPhoto are now in telegram-utils.ts
 
 import { registerTool } from "./tools/registry.js";
 registerTool({

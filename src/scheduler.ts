@@ -1,12 +1,12 @@
 import cron from "node-cron";
 import { runAgent } from "./agent.js";
-import { saveMessage } from "./db-provider.js";
-import { sendTelegramMessage, sendTelegramPhoto } from "./bot.js";
+import { sendTelegramMessage, sendTelegramPhoto } from "./telegram-utils.js";
 import { generateDailyJudgment, generateWeeklyJudgment } from "./judgment.js";
 import * as db from "./finance/finance-db.js";
 import * as calc from "./finance/finance-calculator.js";
 import { generateCategoryChartUrl } from "./finance/finance-charts.js";
 import { runCurationCycle, generateDailyReport } from "./skills/llm-tracker/index.js";
+import { pollReminders } from "./reminders.js";
 
 /**
  * Scheduled Tasks System
@@ -14,14 +14,21 @@ import { runCurationCycle, generateDailyReport } from "./skills/llm-tracker/inde
  */
 class Scheduler {
     private tasks: Map<string, cron.ScheduledTask> = new Map();
+    private defaultTimezone = "America/Sao_Paulo";
 
-    schedule(id: string, expression: string, task: () => void) {
+    schedule(id: string, expression: string, task: () => void, timezone?: string) {
         if (this.tasks.has(id)) {
             this.tasks.get(id)?.stop();
         }
-        const job = cron.schedule(expression, task);
+
+        const options = {
+            scheduled: true,
+            timezone: timezone || this.defaultTimezone
+        };
+
+        const job = cron.schedule(expression, task, options);
         this.tasks.set(id, job);
-        console.log(`⏰ Task [${id}] scheduled with: ${expression}`);
+        console.log(`⏰ Task [${id}] scheduled with: ${expression} (${options.timezone})`);
     }
 
     stop(id: string) {
@@ -37,28 +44,25 @@ class Scheduler {
 export const scheduler = new Scheduler();
 
 // ── Default Proactive Tasks ──────────────────────────────────────────
-// Morning Briefing (e.g., at 8 AM)
-// Satisfies: 1. Morning Briefing
 export function setupDefaultTasks(chatId: string) {
+    // Morning Briefing (8 AM)
     scheduler.schedule(`${chatId}_morning`, "0 8 * * *", async () => {
         const briefing = await runAgent(chatId, "Generate a morning briefing with weather, news, and today's schedule.");
-        // Note: We need a way to send this back to Telegram, 
-        // will likely need to export the bot instance or a reply function.
-        console.log(`🌞 Morning briefing for ${chatId}: ${briefing.text.substring(0, 50)}...`);
+        await sendTelegramMessage(chatId, briefing.text);
+        console.log(`🌞 Morning briefing for ${chatId} sent.`);
     });
 
-    // Evening Recap (e.g., at 9 PM)
-    // Satisfies: 2. Evening Recap
+    // Evening Recap (9 PM)
     scheduler.schedule(`${chatId}_evening`, "0 21 * * *", async () => {
         const recap = await runAgent(chatId, "Generate an evening recap of today's tasks and messages.");
-        console.log(`🌙 Evening recap for ${chatId}: ${recap.text.substring(0, 50)}...`);
+        await sendTelegramMessage(chatId, recap.text);
+        console.log(`🌙 Evening recap for ${chatId} sent.`);
     });
 
     // ── Finance Scheduled Tasks ──────────────────────────────────────
-    // Daily bill alerts at 9 AM — checks for bills due in the next 3 days
     scheduler.schedule(`${chatId}_finance_alerts`, "0 9 * * *", async () => {
         try {
-            const prompt = `Atue como meu assistente financeiro proativo. Verifique se há contas vencendo hoje ou nos próximos 3 dias (use finance_calendar). Se houver, mande um alerta curto, amigável mas urgente, avisando sobre os valores e nomes das contas para eu não esquecer de pagar. Se não houver, pode apenas me desejar um bom dia financeiramente tranquilo.`;
+            const prompt = `Atue como meu assistente financeiro proativo. Verifique se há contas vencendo hoje ou nos próximos 3 dias (use finance_calendar). Se houver, mande um alerta curto, amigável mas urgente, avisando sobre os valores e nomes das contas para eu não esquecer de pagar.`;
             const result = await runAgent(chatId, prompt);
             await sendTelegramMessage(chatId, result.text);
             console.log(`💰 Finance alerts sent for ${chatId}`);
@@ -67,26 +71,19 @@ export function setupDefaultTasks(chatId: string) {
         }
     });
 
-    // Monthly financial summary on the 1st at 10 AM
+    // Monthly financial summary (1st at 10 AM)
     scheduler.schedule(`${chatId}_finance_monthly`, "0 10 1 * *", async () => {
         try {
             await sendTelegramMessage(chatId, "📊 *Gerando seu Resumo Financeiro Mensal...*");
-
-            // 1. Get AI Summary & Insights
-            const prompt = `Gere o resumo financeiro completo do mês passado usando finance_monthly_summary. Faça uma análise crítica dos meus gastos (em quais categorias eu posso economizar mais?), me informe meu score de saúde financeira, e feche com 3 recomendações ou dicas práticas exclusivas focadas nos meus hábitos recentes de consumo da nossa base de dados. Formate lindamente usando markdown com emojis.`;
+            const prompt = `Gere o resumo financeiro completo do mês passado usando finance_monthly_summary.`;
             const aiText = await runAgent(chatId, prompt);
 
-            // 2. Try to generate a chart for the previous month
             let photoUrl = "";
             try {
                 const now = new Date();
-                // We want the previous month
                 let targetYear = now.getFullYear();
-                let targetMonth = now.getMonth(); // 0-based, so this is previous month (1-12 range)
-                if (targetMonth === 0) {
-                    targetMonth = 12;
-                    targetYear--;
-                }
+                let targetMonth = now.getMonth();
+                if (targetMonth === 0) { targetMonth = 12; targetYear--; }
 
                 const [fixed, variable, subs, expenses] = await Promise.all([
                     db.listRecurringFixed(chatId),
@@ -95,56 +92,44 @@ export function setupDefaultTasks(chatId: string) {
                     db.getMonthExpenses(chatId, targetYear, targetMonth),
                 ]);
 
-                // Get breakdown Record<string, number>
                 const breakdownRecord = calc.categoryBreakdown(fixed, variable, subs, expenses);
-
-                // Convert Record<string, number> to array for chart
                 const breakdownArr = Object.entries(breakdownRecord).map(([cat, val]) => ({ category: cat, amount: val }));
-                // Filter out non-zero categories
                 const filteredBreakdown = breakdownArr.filter(c => c.amount > 0);
-
                 photoUrl = generateCategoryChartUrl(filteredBreakdown, `Resumo: Mês ${targetMonth}/${targetYear}`);
             } catch (chartErr) {
-                console.warn(`⚠️ Could not generate chart for monthly summary:`, chartErr);
+                console.warn(`⚠️ Could not generate chart:`, chartErr);
             }
 
-            // 3. Send to user
-            if (photoUrl) {
-                await sendTelegramPhoto(chatId, photoUrl, "Distribuição dos seus gastos do mês passado ☝️");
-            }
+            if (photoUrl) await sendTelegramPhoto(chatId, photoUrl, "Distribuição dos seus gastos ☝️");
             await sendTelegramMessage(chatId, aiText.text);
-
-            console.log(`📊 Monthly finance summary sent for ${chatId}`);
         } catch (err) {
-            console.error(`❌ Monthly summary error for ${chatId}:`, err);
+            console.error(`❌ Monthly summary error:`, err);
         }
     });
 
     // ── Judgment Scheduled Tasks ──────────────────────────────────────
-    // Daily Judgment (Bot's Diary) - at 11:50 PM
     scheduler.schedule(`${chatId}_daily_judgment`, "50 23 * * *", async () => {
         try {
             await generateDailyJudgment(chatId);
-            console.log(`🧠 Daily judgment generated for ${chatId}`);
+            console.log(`🧠 Daily judgment for ${chatId} generated.`);
         } catch (err) {
-            console.error(`❌ Daily judgment error for ${chatId}:`, err);
+            console.error(`❌ Daily judgment error:`, err);
         }
     });
 
-    // Weekly Judgment Deep Dive - Sunday at 11:55 PM
     scheduler.schedule(`${chatId}_weekly_judgment`, "55 23 * * 0", async () => {
         try {
             await generateWeeklyJudgment(chatId);
-            console.log(`🧠 Weekly judgment generated for ${chatId}`);
+            console.log(`🧠 Weekly judgment for ${chatId} generated.`);
         } catch (err) {
-            console.error(`❌ Weekly judgment error for ${chatId}:`, err);
+            console.error(`❌ Weekly judgment error:`, err);
         }
     });
 }
 
-// ── Global System Tasks (Run exactly once, regardless of user count) ──
+// ── Global System Tasks ─────────────────────────────────────────────
 export function setupGlobalTasks() {
-    // LLM Tracker: Curate new tools/models every 2 hours
+    // LLM Tracker: Curate every 2 hours
     scheduler.schedule("global_llm_tracker_curate", "0 */2 * * *", async () => {
         try {
             await runCurationCycle();
@@ -153,12 +138,21 @@ export function setupGlobalTasks() {
         }
     });
 
-    // LLM Tracker: Generate and distribute daily report at 9 AM
+    // LLM Tracker: Daily report at 9 AM
     scheduler.schedule("global_llm_tracker_report", "0 9 * * *", async () => {
         try {
             await generateDailyReport();
         } catch (err) {
             console.error(`❌ Global LLM Tracker report error:`, err);
+        }
+    });
+
+    // ── Reminder Polling: Every 1 minute ──
+    scheduler.schedule("global_reminder_polling", "* * * * *", async () => {
+        try {
+            await pollReminders();
+        } catch (err) {
+            console.error(`❌ Reminder polling error:`, err);
         }
     });
 }

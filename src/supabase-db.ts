@@ -257,4 +257,42 @@ export class SupabaseMemory {
             timestamp: row.created_at,
         }));
     }
+
+    // ── Reminders ──────────────────────────────────────────────
+
+    async addReminder(chatId: string, userId: number, text: string, remindAt: Date, metadata?: any): Promise<void> {
+        const { error } = await getClient()
+            .from("reminders")
+            .insert({
+                chat_id: chatId,
+                user_id: userId,
+                reminder_text: text,
+                remind_at: remindAt.toISOString(),
+                status: "pending",
+                metadata: metadata ?? null,
+            });
+        if (error) console.error("❌ Supabase addReminder:", error.message);
+    }
+
+    async getPendingReminders(): Promise<any[]> {
+        const { data, error } = await getClient()
+            .from("reminders")
+            .select("*")
+            .eq("status", "pending")
+            .lte("remind_at", new Date().toISOString());
+
+        if (error) {
+            console.error("❌ Supabase getPendingReminders:", error.message);
+            return [];
+        }
+        return data ?? [];
+    }
+
+    async updateReminderStatus(id: number, status: "sent" | "cancelled"): Promise<void> {
+        const { error } = await getClient()
+            .from("reminders")
+            .update({ status })
+            .eq("id", id);
+        if (error) console.error(`❌ Supabase updateReminderStatus (${id}, ${status}):`, error.message);
+    }
 }

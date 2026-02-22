@@ -22,7 +22,7 @@ export async function runAgent(
 ): Promise<AgentResult> {
   // 0. Track behavior patterns for proactive recommendations
   analyzeMessageForPatterns(chatId, userMessage);
-  
+
   // 1. Get history from DB (limit to last 15 messages to save tokens and maintain concise context)
   const history = (await getChatHistory(chatId, 15)) as Message[];
 
@@ -87,7 +87,7 @@ FORMATTING:
     const response = await chat(messages);
 
     const choice = response.choices[0];
-    if (!choice) return { text: "\u26a0\ufe0f No response from the model.", media: [] };
+    if (!choice) return { text: "⚠️ No response from the model.", media: [] };
 
     const assistantMessage = choice.message;
     messages.push(assistantMessage as Message);
@@ -100,7 +100,7 @@ FORMATTING:
     if (toolCalls.length === 0) {
       const finalResponse = assistantMessage.content && assistantMessage.content.trim()
         ? assistantMessage.content
-        : "\u2705 Operação finalizada.";
+        : "✅ Operação finalizada.";
       // Save memory to DB (SQLite or Supabase)
       await saveMessage(chatId, "user", userMessage);
       await saveMessage(chatId, "assistant", finalResponse);
@@ -120,7 +120,8 @@ FORMATTING:
         resultText = JSON.stringify({ error: "Unknown tool: " + fnName });
       } else {
         try {
-          const rawResult = await tool.execute(fnArgs);
+          const ctx = { chatId };
+          const rawResult = await tool.execute(fnArgs, ctx);
           if (typeof rawResult === 'string') {
             resultText = rawResult;
           } else {
@@ -145,6 +146,6 @@ FORMATTING:
   }
 
   const lastContent = messages[messages.length - 1]?.content;
-  const finalText = lastContent && typeof lastContent === 'string' && lastContent.trim() ? lastContent : "\u26a0\ufe0f Operação finalizada.";
+  const finalText = lastContent && typeof lastContent === 'string' && lastContent.trim() ? lastContent : "⚠️ Operação finalizada.";
   return { text: finalText, media: accumulatedMedia };
 }
