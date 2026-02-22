@@ -28,15 +28,23 @@ export class TypingIndicator {
 
         try {
             await this.ctx.replyWithChatAction(this.action);
-        } catch (e) {
-            console.error("Failed to set initial chat action", e);
+        } catch (e: any) {
+            // Ignore common network errors for the initial cosmetic indicator
+            const isNetworkError = e.code === 'ETIMEDOUT' || e.code === 'ECONNREFUSED' || e.message?.includes('timeout');
+            if (!isNetworkError) {
+                console.error("Failed to set initial chat action:", e.message || e);
+            }
         }
 
         this.interval = setInterval(async () => {
             try {
                 await this.ctx.replyWithChatAction(this.action);
-            } catch (e) {
-                console.error("Failed to maintain chat action", e);
+            } catch (e: any) {
+                // Ignore common network errors for the periodic cosmetic indicator
+                const isNetworkError = e.code === 'ETIMEDOUT' || e.code === 'ECONNRESET' || e.message?.includes('timeout');
+                if (!isNetworkError) {
+                    console.error("Failed to maintain chat action:", e.message || e);
+                }
             }
         }, 4500); // Send action every 4.5 seconds to keep it active
     }
