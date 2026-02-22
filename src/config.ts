@@ -66,6 +66,7 @@ const modalBaseUrl = optionalEnv("MODAL_BASE_URL");
 const modalApiKey = optionalEnv("MODAL_API_KEY");
 const ocrSpaceApiKey = optionalEnv("OCR_SPACE_API_KEY");
 const masterKey = optionalEnv("MASTER_KEY");
+const puterDefaultModel = optionalEnv("PUTER_DEFAULT_MODEL", "moonshotai/kimi-k2.5");
 
 console.log("\n📋 Parsed values:");
 const allowedUserIds = parseUserIds(allowedUserIdsRaw);
@@ -103,6 +104,9 @@ export const config = {
     // ── Performance ────────────────────────────────────────
     lowResourceMode: process.env.LOW_RESOURCE_MODE === "true",
     maxConcurrentTools: parseInt(process.env.MAX_CONCURRENT_TOOLS || "4"),
+    
+    // ── Puter (Code Agent Fallback) ────────────────────────
+    puterDefaultModel,
 } as const;
 
 // Validation
