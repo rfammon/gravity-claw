@@ -2,7 +2,7 @@ import Groq from "groq-sdk";
 import OpenAI from "openai";
 import { config } from "../../config.js";
 import { getUnreportedNews, markNewsAsReported } from "./db.js";
-import { sendTelegramMessage } from "../../bot.js";
+import { sendTelegramMessage } from "../../telegram-utils.js";
 
 function getGroqClient() {
     if (config.groqApiKey) {
