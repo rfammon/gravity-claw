@@ -27,8 +27,32 @@ async function testPuterConnection() {
         console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         console.log(`⏱️  Response time: ${elapsed}ms`);
         console.log(`📝 Response type: ${typeof response}`);
-        console.log(`📄 Response:\n${response}`);
+        console.log(`📄 Full response object:`);
+        console.log(JSON.stringify(response, null, 2));
         console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        
+        // Check if response is valid
+        let result = "";
+        const resp = response as any;
+        if (typeof response === "string") {
+            result = response;
+        } else if (resp?.message?.content) {
+            if (typeof resp.message.content === "string") {
+                result = resp.message.content;
+            }
+        } else if (resp?.content) {
+            if (typeof resp.content === "string") {
+                result = resp.content;
+            }
+        } else if (resp?.text) {
+            result = resp.text;
+        }
+        
+        if (result) {
+            console.log(`✅ Extracted text: ${result.substring(0, 200)}...`);
+        } else {
+            console.log("⚠️ Could not extract text from response");
+        }
         
         return true;
     } catch (err: any) {
@@ -40,9 +64,12 @@ async function testPuterConnection() {
         console.log(`⏱️  Time before failure: ${elapsed}ms`);
         console.log(`🔴 Error: ${err.message}`);
         
-        if (err.message.includes("auth") || err.message.includes("login")) {
-            console.log("\n💡 TIP: Puter requires authentication.");
-            console.log("   Try running in a browser first or check credentials.");
+        if (err.message.includes("auth") || err.message.includes("login") || err.message.includes("token")) {
+            console.log("\n💡 TIP: Puter requires authentication in Node.js environment.");
+            console.log("   Options:");
+            console.log("   1. Use Puter in browser environment");
+            console.log("   2. Set PUTER_TOKEN environment variable (if available)");
+            console.log("   3. Code Agent will fallback to OpenRouter automatically");
         }
         
         console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
@@ -51,41 +78,25 @@ async function testPuterConnection() {
     }
 }
 
-// Also test with different response formats
-async function testPuterFormats() {
-    console.log("🧪 Testing Puter response formats...\n");
+// Test different models
+async function testPuterModels() {
+    console.log("🧪 Testing different Puter models...\n");
 
-    // Test 1: Simple string
-    console.log("Test 1: Simple string prompt");
-    try {
-        const response = await puter.ai.chat("Say 'OK'", { model: "gpt-4o-mini" });
-        console.log(`   Response: ${JSON.stringify(response).substring(0, 100)}...`);
-        console.log("   ✅ Passed\n");
-    } catch (err: any) {
-        console.log(`   ❌ Failed: ${err.message}\n`);
-    }
+    const models = [
+        "gpt-4o-mini",
+        "claude-3-haiku-20240307",
+        "moonshotai/kimi-k2.5"
+    ];
 
-    // Test 2: Array format (conversation)
-    console.log("Test 2: Array format (conversation)");
-    try {
-        const response = await puter.ai.chat([
-            { role: "system", content: "You are helpful." },
-            { role: "user", content: "Say 'OK'" }
-        ], { model: "gpt-4o-mini" });
-        console.log(`   Response: ${JSON.stringify(response).substring(0, 100)}...`);
-        console.log("   ✅ Passed\n");
-    } catch (err: any) {
-        console.log(`   ❌ Failed: ${err.message}\n`);
-    }
-
-    // Test 3: Kimi model
-    console.log("Test 3: Kimi K2.5 model");
-    try {
-        const response = await puter.ai.chat("Diga 'OK'", { model: "moonshotai/kimi-k2.5" });
-        console.log(`   Response: ${JSON.stringify(response).substring(0, 100)}...`);
-        console.log("   ✅ Passed\n");
-    } catch (err: any) {
-        console.log(`   ❌ Failed: ${err.message}\n`);
+    for (const model of models) {
+        console.log(`Testing model: ${model}`);
+        try {
+            const response = await puter.ai.chat("Say OK", { model });
+            console.log(`   Response: ${JSON.stringify(response).substring(0, 100)}...`);
+            console.log("   ✅ Passed\n");
+        } catch (err: any) {
+            console.log(`   ❌ Failed: ${err.message}\n`);
+        }
     }
 }
 
@@ -93,6 +104,6 @@ async function testPuterFormats() {
 console.log("Starting Puter tests...\n");
 testPuterConnection().then(success => {
     if (success) {
-        return testPuterFormats();
+        return testPuterModels();
     }
 });

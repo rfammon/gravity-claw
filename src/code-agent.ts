@@ -80,11 +80,24 @@ export async function runCodeAgent(task: string): Promise<string> {
             result = response.content;
         } else if (response?.text) {
             result = response.text;
+        } else if (response?.message && typeof response.message === "string") {
+            // Handle error messages like "Missing authentication token"
+            if (response.message.includes("token") || response.message.includes("auth")) {
+                console.log(`⚠️ Puter auth issue: ${response.message}. Trying fallback...`);
+                throw new Error(response.message);
+            }
+            result = response.message;
         } else {
             result = JSON.stringify(response);
         }
         
-        if (result && result.length > 10) {
+        // Check for auth errors in string response
+        if (result.includes("token_missing") || result.includes("authentication")) {
+            console.log("⚠️ Puter requires authentication. Trying fallback...");
+            throw new Error("Puter authentication required");
+        }
+        
+        if (result && result.length > 10 && !result.includes("undefined")) {
             const elapsed = Date.now() - startTime;
             console.log(`✅ Code Agent (Puter) responded in ${elapsed}ms`);
             return result;
