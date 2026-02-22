@@ -33,6 +33,11 @@ import { registerSecretTools } from "./tools/secrets.js";
 registerSecretTools();
 console.log("🛡️ Encrypted Secrets enabled");
 
+// ☁️ Supabase Tools — Native database access for agents
+import { registerSupabaseTools } from "./tools/supabase-tool.js";
+registerSupabaseTools();
+console.log("☁️ Supabase Tools enabled");
+
 // Start Live Canvas WebSocket Server
 import { startCanvasServer } from "./canvas/server.js";
 startCanvasServer();
