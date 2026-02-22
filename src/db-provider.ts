@@ -1,11 +1,10 @@
 /**
- * Database Provider — Abstraction Layer
+ * Database Provider — Unified Abstraction Layer
  *
- * Selects Supabase (cloud) or SQLite (local) based on env vars.
- * All consumers import from here instead of memory.ts directly.
+ * Priority: Supabase (cloud) → SQLite (local)
+ * SQLite: better-sqlite3 (native) → sql.js (pure JS fallback)
  *
- * If SUPABASE_URL is set → uses Supabase (cloud, device-independent)
- * Otherwise → uses local SQLite (current behavior, zero config)
+ * All consumers import from here for consistent API.
  */
 
 import { config } from "./config.js";
@@ -36,49 +35,245 @@ export interface IMemoryProvider {
     getJudgmentsSince(chatId: string, type: "daily", sinceDateISO: string): { opinion: string; timestamp: string }[] | Promise<{ opinion: string; timestamp: string }[]>;
 }
 
+// ── Debug: Log Supabase config ───────────────────────────────────────
+console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+console.log("🔍 Database Provider Debug");
+console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+console.log(`   SUPABASE_URL: ${config.supabaseUrl ? `✅ Set (${config.supabaseUrl.substring(0, 30)}...)` : "❌ Not set"}`);
+console.log(`   SUPABASE_SERVICE_KEY: ${config.supabaseServiceKey ? `✅ Set (${config.supabaseServiceKey.substring(0, 20)}...)` : "❌ Not set"}`);
+console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
 // ── Provider Selection ───────────────────────────────────────────────
 let _db: IMemoryProvider;
+let _backend: "supabase" | "sqlite" | "pending" = "pending";
 
-if (config.supabaseUrl && config.supabaseServiceKey) {
-    console.log("☁️  Database: Supabase (cloud mode)");
-    const { SupabaseMemory } = await import("./supabase-db.js");
-    _db = new SupabaseMemory();
-} else {
-    console.log("💾 Database: SQLite (local mode)");
-    const mem = await import("./memory.js");
+async function initializeProvider(): Promise<IMemoryProvider> {
+    // Try Supabase first (if configured)
+    if (config.supabaseUrl && config.supabaseServiceKey) {
+        console.log("☁️  Attempting Supabase connection...");
+        try {
+            const { SupabaseMemory } = await import("./supabase-db.js");
+            const supabaseProvider = new SupabaseMemory();
+            
+            // Test connection with a simple query
+            const { error } = await (await import("./supabase-db.js")).getClient()
+                .from("memories")
+                .select("id")
+                .limit(1);
+            
+            if (error && error.code !== "PGRST116") { // PGRST116 = no rows found (ok)
+                throw new Error(`Supabase query failed: ${error.message}`);
+            }
+            
+            console.log("✅ Supabase connected successfully!");
+            _backend = "supabase";
+            return supabaseProvider;
+        } catch (err) {
+            console.error("⚠️  Supabase connection failed:", err instanceof Error ? err.message : String(err));
+            console.log("📦 Falling back to SQLite...");
+        }
+    }
 
-    // Wrap sync memory.ts functions into IMemoryProvider
-    _db = {
+    // Fallback to SQLite (using adaptive adapter)
+    console.log("💾 Initializing SQLite...");
+    _backend = "sqlite";
+    
+    try {
+        const { initDatabase, getDatabase } = await import("./db-adapter.js");
+        const db = await initDatabase();
+        
+        // Wrap database adapter to match IMemoryProvider interface
+        return createSQLiteProvider(db);
+    } catch (err) {
+        console.error("❌ SQLite adapter failed:", err);
+        console.log("🔄 Using legacy memory.ts as final fallback...");
+        
+        // Final fallback to legacy memory.ts
+        const mem = await import("./memory.js");
+        return {
+            backend: "sqlite" as const,
+            saveMessage: mem.saveMessage,
+            getChatHistory: mem.getChatHistory,
+            storeFact: mem.storeFact,
+            getFacts: mem.getFacts,
+            clearHistory: mem.clearHistory,
+            trackBotMessage: mem.trackBotMessage,
+            saveFeedback: mem.saveFeedback,
+            getFeedbackSummary: mem.getFeedbackSummary,
+            saveJudgment: mem.saveJudgment,
+            getLatestJudgments: mem.getLatestJudgments,
+            getMemoriesSince: mem.getMemoriesSince,
+            getJudgmentsSince: mem.getJudgmentsSince,
+        };
+    }
+}
+
+function createSQLiteProvider(db: any): IMemoryProvider {
+    return {
         backend: "sqlite" as const,
-        saveMessage: mem.saveMessage,
-        getChatHistory: mem.getChatHistory,
-        storeFact: mem.storeFact,
-        getFacts: mem.getFacts,
-        clearHistory: mem.clearHistory,
-        trackBotMessage: mem.trackBotMessage,
-        saveFeedback: mem.saveFeedback,
-        getFeedbackSummary: mem.getFeedbackSummary,
-
-        saveJudgment: mem.saveJudgment,
-        getLatestJudgments: mem.getLatestJudgments,
-        getMemoriesSince: mem.getMemoriesSince,
-        getJudgmentsSince: mem.getJudgmentsSince,
+        
+        saveMessage: (chatId, role, content, metadata) => {
+            const stmt = db.prepare("INSERT INTO memories (chat_id, role, content, metadata) VALUES (?, ?, ?, ?)");
+            stmt.run(chatId, role, content, metadata ? JSON.stringify(metadata) : null);
+        },
+        
+        getChatHistory: (chatId, limit = 50) => {
+            const stmt = db.prepare("SELECT role, content, timestamp FROM memories WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?");
+            const rows = stmt.all(chatId, limit) as any[];
+            return rows.reverse().map(row => ({
+                role: row.role as MemoryEntry["role"],
+                content: row.content,
+                timestamp: row.timestamp
+            }));
+        },
+        
+        storeFact: (chatId, key, value) => {
+            const stmt = db.prepare(`
+                INSERT INTO facts (chat_id, key, value) VALUES (?, ?, ?)
+                ON CONFLICT(chat_id, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+            `);
+            stmt.run(chatId, key, value);
+        },
+        
+        getFacts: (chatId) => {
+            const stmt = db.prepare("SELECT key, value FROM facts WHERE chat_id = ?");
+            const rows = stmt.all(chatId) as any[];
+            const facts: Record<string, string> = {};
+            rows.forEach(row => { facts[row.key] = row.value; });
+            return facts;
+        },
+        
+        clearHistory: (chatId) => {
+            const stmt = db.prepare("DELETE FROM memories WHERE chat_id = ?");
+            stmt.run(chatId);
+        },
+        
+        trackBotMessage: (chatId, messageId, responseText) => {
+            const stmt = db.prepare("INSERT OR REPLACE INTO bot_messages (message_id, chat_id, response_text) VALUES (?, ?, ?)");
+            stmt.run(messageId, chatId, responseText.substring(0, 500));
+        },
+        
+        saveFeedback: (chatId, messageId, signal, emoji) => {
+            const lookup = db.prepare("SELECT response_text FROM bot_messages WHERE chat_id = ? AND message_id = ?");
+            const row = lookup.get(chatId, messageId) as { response_text: string } | undefined;
+            const botResponse = row?.response_text ?? "(unknown message)";
+            
+            const stmt = db.prepare("INSERT INTO feedback (chat_id, message_id, bot_response, signal, emoji) VALUES (?, ?, ?, ?, ?)");
+            stmt.run(chatId, messageId, botResponse, signal, emoji);
+            console.log(`📊 Feedback saved: ${emoji} (${signal}) on message ${messageId}`);
+        },
+        
+        getFeedbackSummary: (chatId) => {
+            const stmt = db.prepare("SELECT bot_response, signal, emoji, timestamp FROM feedback WHERE chat_id = ? ORDER BY timestamp DESC LIMIT 20");
+            const rows = stmt.all(chatId) as { bot_response: string; signal: string; emoji: string; timestamp: string }[];
+            
+            if (rows.length === 0) return "";
+            
+            const loved = rows.filter(r => r.signal === "loved");
+            const positive = rows.filter(r => r.signal === "positive");
+            const negative = rows.filter(r => r.signal === "negative");
+            
+            let summary = "";
+            if (loved.length > 0) {
+                summary += "\n❤️ RESPONSES THE USER LOVED:\n";
+                loved.forEach(r => summary += `- "${r.bot_response.substring(0, 120)}..."\n`);
+            }
+            if (positive.length > 0) {
+                summary += "\n👍 RESPONSES THE USER LIKED:\n";
+                positive.forEach(r => summary += `- "${r.bot_response.substring(0, 120)}..."\n`);
+            }
+            if (negative.length > 0) {
+                summary += "\n😡 RESPONSES THE USER DISLIKED:\n";
+                negative.forEach(r => summary += `- "${r.bot_response.substring(0, 120)}..."\n`);
+            }
+            
+            return summary;
+        },
+        
+        saveJudgment: (chatId, type, opinion, periodStart, periodEnd) => {
+            const stmt = db.prepare(`
+                INSERT INTO user_judgments (chat_id, type, opinion, period_start, period_end) 
+                VALUES (?, ?, ?, ?, ?)
+            `);
+            stmt.run(chatId, type, opinion, periodStart, periodEnd);
+            console.log(`🧠 Judgment saved (${type}) for ${chatId}`);
+        },
+        
+        getLatestJudgments: (chatId) => {
+            const weeklyStmt = db.prepare("SELECT opinion, timestamp FROM user_judgments WHERE chat_id = ? AND type = 'weekly' ORDER BY timestamp DESC LIMIT 1");
+            const dailyStmt = db.prepare("SELECT opinion, timestamp FROM user_judgments WHERE chat_id = ? AND type = 'daily' ORDER BY timestamp DESC LIMIT 3");
+            
+            const latestWeekly = weeklyStmt.get(chatId) as { opinion: string; timestamp: string } | undefined;
+            const recentDailies = dailyStmt.all(chatId) as { opinion: string; timestamp: string }[];
+            
+            let summary = "";
+            if (latestWeekly) {
+                summary += `📌 Avaliação Semanal Profunda (${latestWeekly.timestamp}):\n${latestWeekly.opinion}\n\n`;
+            }
+            
+            if (recentDailies.length > 0) {
+                summary += `📝 Diários Recentes:\n`;
+                recentDailies.forEach(d => summary += `- [${d.timestamp}] ${d.opinion}\n`);
+            }
+            
+            return summary;
+        },
+        
+        getMemoriesSince: (chatId, sinceDateISO) => {
+            const stmt = db.prepare("SELECT role, content, timestamp FROM memories WHERE chat_id = ? AND timestamp >= ? ORDER BY timestamp ASC");
+            const rows = stmt.all(chatId, sinceDateISO) as any[];
+            return rows.map(row => ({
+                role: row.role as MemoryEntry["role"],
+                content: row.content,
+                timestamp: row.timestamp
+            }));
+        },
+        
+        getJudgmentsSince: (chatId, type, sinceDateISO) => {
+            const stmt = db.prepare("SELECT opinion, timestamp FROM user_judgments WHERE chat_id = ? AND type = ? AND timestamp >= ? ORDER BY timestamp ASC");
+            return stmt.all(chatId, type, sinceDateISO) as { opinion: string; timestamp: string }[];
+        }
     };
 }
 
-export const db = _db;
+// Initialize and export
+const providerPromise = initializeProvider();
 
-// ── Convenience re-exports (same API as before) ──────────────────────
-export const saveMessage = db.saveMessage.bind(db);
-export const getChatHistory = db.getChatHistory.bind(db);
-export const storeFact = db.storeFact.bind(db);
-export const getFacts = db.getFacts.bind(db);
-export const clearHistory = db.clearHistory.bind(db);
-export const trackBotMessage = db.trackBotMessage.bind(db);
-export const saveFeedback = db.saveFeedback.bind(db);
-export const getFeedbackSummary = db.getFeedbackSummary.bind(db);
+// Export database instance (for direct access if needed)
+export async function getDb(): Promise<IMemoryProvider> {
+    return providerPromise;
+}
 
-export const saveJudgment = db.saveJudgment.bind(db);
-export const getLatestJudgments = db.getLatestJudgments.bind(db);
-export const getMemoriesSince = db.getMemoriesSince.bind(db);
-export const getJudgmentsSince = db.getJudgmentsSince.bind(db);
+// Export backend type
+export function getBackendType(): string {
+    return _backend;
+}
+
+// Synchronous exports (for backwards compatibility)
+// These will use the cached provider after initialization
+let _cachedDb: IMemoryProvider | null = null;
+
+providerPromise.then(db => {
+    _cachedDb = db;
+});
+
+function requireDb(): IMemoryProvider {
+    if (!_cachedDb) {
+        throw new Error("Database not yet initialized. Use getDb() for async access.");
+    }
+    return _cachedDb;
+}
+
+// Convenience re-exports
+export const saveMessage = (...args: Parameters<IMemoryProvider["saveMessage"]>) => requireDb().saveMessage(...args);
+export const getChatHistory = (...args: Parameters<IMemoryProvider["getChatHistory"]>) => requireDb().getChatHistory(...args);
+export const storeFact = (...args: Parameters<IMemoryProvider["storeFact"]>) => requireDb().storeFact(...args);
+export const getFacts = (...args: Parameters<IMemoryProvider["getFacts"]>) => requireDb().getFacts(...args);
+export const clearHistory = (...args: Parameters<IMemoryProvider["clearHistory"]>) => requireDb().clearHistory(...args);
+export const trackBotMessage = (...args: Parameters<IMemoryProvider["trackBotMessage"]>) => requireDb().trackBotMessage(...args);
+export const saveFeedback = (...args: Parameters<IMemoryProvider["saveFeedback"]>) => requireDb().saveFeedback(...args);
+export const getFeedbackSummary = (...args: Parameters<IMemoryProvider["getFeedbackSummary"]>) => requireDb().getFeedbackSummary(...args);
+export const saveJudgment = (...args: Parameters<IMemoryProvider["saveJudgment"]>) => requireDb().saveJudgment(...args);
+export const getLatestJudgments = (...args: Parameters<IMemoryProvider["getLatestJudgments"]>) => requireDb().getLatestJudgments(...args);
+export const getMemoriesSince = (...args: Parameters<IMemoryProvider["getMemoriesSince"]>) => requireDb().getMemoriesSince(...args);
+export const getJudgmentsSince = (...args: Parameters<IMemoryProvider["getJudgmentsSince"]>) => requireDb().getJudgmentsSince(...args);
