@@ -87,6 +87,52 @@ export function registerSupabaseTools(): void {
             }
         }
     });
+    registerTool({
+        name: "supabase_insert",
+        description: "Insert one or more rows into a Supabase table. Use this to save memories, facts, or judgments. Tables: memories, facts, bot_messages, feedback, user_judgments.",
+        parameters: {
+            type: "object",
+            properties: {
+                table: {
+                    type: "string",
+                    description: "The table to insert into (e.g., 'memories', 'facts', 'user_judgments')"
+                },
+                data: {
+                    type: "object",
+                    description: "The data to insert. Can be a single object or an array of objects for batch insertion."
+                }
+            },
+            required: ["table", "data"]
+        },
+        execute: async ({ table, data }) => {
+            try {
+                const tableName = String(table);
 
-    console.log("🔧 Registered Supabase tool: supabase_query");
+                // Execute the insert
+                const { data: result, error } = await getClient()
+                    .from(tableName)
+                    .insert(data)
+                    .select(); // Ask for representation to confirm success
+
+                if (error) {
+                    throw new Error(`Supabase Insert Error: ${error.message}`);
+                }
+
+                return JSON.stringify({
+                    success: true,
+                    message: `Successfully inserted into table '${tableName}'.`,
+                    count: result ? result.length : 0,
+                    data: result
+                });
+            } catch (err) {
+                console.error("❌ supabase_insert tool error:", err);
+                return JSON.stringify({
+                    success: false,
+                    error: err instanceof Error ? err.message : String(err)
+                });
+            }
+        }
+    });
+
+    console.log("🔧 Registered Supabase tools: supabase_query, supabase_insert");
 }
