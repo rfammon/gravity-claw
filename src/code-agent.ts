@@ -9,7 +9,7 @@ const CODE_MODEL_OPENROUTER = "qwen/qwen-2.5-72b-instruct";
 // Cache Puter module to avoid repeated imports
 let puterModule: any = null;
 
-// ── Modal Client (Primary) ────────────────────────────────────────
+// ── Modal Client (Fallback 1) ──────────────────────────────────────
 function getModalClient(): OpenAI | null {
     if (!config.modalBaseUrl || !config.modalApiKey) {
         return null;
@@ -20,7 +20,7 @@ function getModalClient(): OpenAI | null {
     });
 }
 
-// ── OpenRouter Client (Fallback 1) ────────────────────────────────
+// ── OpenRouter Client (Fallback 2) ────────────────────────────────
 function getOpenRouterClient(): OpenAI {
     return new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
@@ -32,7 +32,7 @@ function getOpenRouterClient(): OpenAI {
     });
 }
 
-// ── Puter Client (Fallback 2) ─────────────────────────────────────
+// ── Puter Client (Primary) ─────────────────────────────────────────
 async function getPuterClient(): Promise<any> {
     if (!puterModule) {
         puterModule = await import("@heyputer/puter.js");
@@ -53,68 +53,15 @@ RULES:
 7. If the task involves database queries, provide working SQL or code examples.`;
 
 // ── Run Code Agent with Fallback Chain ────────────────────────────
+// Order: Puter (Primary) → Modal → OpenRouter
 export async function runCodeAgent(task: string): Promise<string> {
     const startTime = Date.now();
     
-    // Try Modal first (GLM-5-FP8 Code Specialist)
-    const modalClient = getModalClient();
-    if (modalClient) {
-        try {
-            console.log(`⚡ Code Agent: Trying Modal (${CODE_MODEL_MODAL})...`);
-            const response = await modalClient.chat.completions.create({
-                model: CODE_MODEL_MODAL,
-                max_tokens: 8192,
-                messages: [
-                    { role: "system", content: CODE_SYSTEM_PROMPT },
-                    { role: "user", content: task }
-                ],
-            });
-            
-            const result = response.choices[0]?.message?.content ?? "";
-            if (result && !result.includes("502") && !result.includes("upstream")) {
-                const elapsed = Date.now() - startTime;
-                console.log(`✅ Code Agent (Modal) responded in ${elapsed}ms`);
-                return result;
-            }
-            console.log("⚠️ Modal returned error response, trying fallback...");
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.log(`⚠️ Modal failed: ${msg}. Trying fallback...`);
-        }
-    } else {
-        console.log("ℹ️ Modal not configured, using fallback...");
-    }
-
-    // Fallback 1: OpenRouter (Qwen)
+    // PRIMARY: Try Puter first (free, reliable)
     try {
-        console.log(`⚡ Code Agent: Trying OpenRouter (${CODE_MODEL_OPENROUTER})...`);
-        const openRouterClient = getOpenRouterClient();
-        const response = await openRouterClient.chat.completions.create({
-            model: CODE_MODEL_OPENROUTER,
-            max_tokens: 8192,
-            messages: [
-                { role: "system", content: CODE_SYSTEM_PROMPT },
-                { role: "user", content: task }
-            ],
-        });
-        
-        const result = response.choices[0]?.message?.content ?? "";
-        if (result) {
-            const elapsed = Date.now() - startTime;
-            console.log(`✅ Code Agent (OpenRouter) responded in ${elapsed}ms`);
-            return result;
-        }
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`⚠️ OpenRouter failed: ${msg}. Trying Puter...`);
-    }
-
-    // Fallback 2: Puter (Kimi or other model)
-    try {
-        console.log(`⚡ Code Agent: Trying Puter...`);
+        console.log(`⚡ Code Agent: Trying Puter (${config.puterDefaultModel})...`);
         const puter = await getPuterClient();
         
-        // Puter AI chat
         const response = await puter.ai.chat(
             [
                 { role: "system", content: CODE_SYSTEM_PROMPT },
@@ -137,28 +84,83 @@ export async function runCodeAgent(task: string): Promise<string> {
             result = JSON.stringify(response);
         }
         
-        if (result) {
+        if (result && result.length > 10) {
             const elapsed = Date.now() - startTime;
             console.log(`✅ Code Agent (Puter) responded in ${elapsed}ms`);
             return result;
         }
+        
+        console.log("⚠️ Puter returned empty/short response, trying fallback...");
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`❌ Puter also failed: ${msg}`);
+        console.log(`⚠️ Puter failed: ${msg}. Trying fallback...`);
+    }
+
+    // FALLBACK 1: Modal (GLM-5-FP8 Code Specialist)
+    const modalClient = getModalClient();
+    if (modalClient) {
+        try {
+            console.log(`⚡ Code Agent: Trying Modal (${CODE_MODEL_MODAL})...`);
+            const response = await modalClient.chat.completions.create({
+                model: CODE_MODEL_MODAL,
+                max_tokens: 8192,
+                messages: [
+                    { role: "system", content: CODE_SYSTEM_PROMPT },
+                    { role: "user", content: task }
+                ],
+            });
+            
+            const result = response.choices[0]?.message?.content ?? "";
+            if (result && !result.includes("502") && !result.includes("upstream")) {
+                const elapsed = Date.now() - startTime;
+                console.log(`✅ Code Agent (Modal) responded in ${elapsed}ms`);
+                return result;
+            }
+            console.log("⚠️ Modal returned error response, trying next fallback...");
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.log(`⚠️ Modal failed: ${msg}. Trying next fallback...`);
+        }
+    } else {
+        console.log("ℹ️ Modal not configured, skipping...");
+    }
+
+    // FALLBACK 2: OpenRouter (Qwen)
+    try {
+        console.log(`⚡ Code Agent: Trying OpenRouter (${CODE_MODEL_OPENROUTER})...`);
+        const openRouterClient = getOpenRouterClient();
+        const response = await openRouterClient.chat.completions.create({
+            model: CODE_MODEL_OPENROUTER,
+            max_tokens: 8192,
+            messages: [
+                { role: "system", content: CODE_SYSTEM_PROMPT },
+                { role: "user", content: task }
+            ],
+        });
+        
+        const result = response.choices[0]?.message?.content ?? "";
+        if (result) {
+            const elapsed = Date.now() - startTime;
+            console.log(`✅ Code Agent (OpenRouter) responded in ${elapsed}ms`);
+            return result;
+        }
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`❌ OpenRouter also failed: ${msg}`);
     }
 
     // All fallbacks failed
     return JSON.stringify({ 
         error: "All code agent backends failed",
-        details: "Modal, OpenRouter, and Puter all returned errors. Please check API keys.",
-        suggestion: "Verify MODAL_API_KEY, OPENROUTER_API_KEY in .env"
+        details: "Puter, Modal, and OpenRouter all returned errors.",
+        suggestion: "Check if Puter is authenticated or verify API keys in .env"
     });
 }
 
 // ── Register as a Tool ────────────────────────────────────────────
 registerTool({
     name: "delegate_to_code_agent",
-    description: "Delegate a coding task or complex technical problem to the code specialist. Use this when the user asks you to write code, build scripts, debug programs, explain complex algorithms, or handle any programming-related task. Has automatic fallback: Modal (GLM-5) → OpenRouter (Qwen) → Puter (Kimi).",
+    description: "Delegate a coding task or complex technical problem to the code specialist. Use this when the user asks you to write code, build scripts, debug programs, explain complex algorithms, or handle any programming-related task. Fallback chain: Puter (Kimi) → Modal (GLM-5) → OpenRouter (Qwen).",
     parameters: {
         type: "object",
         properties: {
@@ -180,4 +182,4 @@ registerTool({
     }
 });
 
-console.log("🔧 Code Agent registered with fallback chain: Modal → OpenRouter → Puter");
+console.log("🔧 Code Agent registered: Puter → Modal → OpenRouter");
