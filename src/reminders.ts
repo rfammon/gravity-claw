@@ -1,5 +1,6 @@
 import { addReminder, getPendingReminders, updateReminderStatus } from "./db-provider.js";
 import { sendTelegramMessage } from "./telegram-utils.js";
+import { porter } from "./porter-agent.js";
 
 /**
  * Reminders Manager
@@ -21,9 +22,20 @@ export async function pollReminders() {
 
     for (const reminder of pending) {
         try {
+            // 1. Send Telegram Notification
             await sendTelegramMessage(reminder.chat_id, `⏰ *LEMBRETE:* ${reminder.reminder_text}`);
+
+            // 2. Call local "Porteiro" for local execution/logging
+            try {
+                const porterResponse = await porter.notify(reminder.reminder_text, reminder.id);
+                console.log(`🤖 Porter said: ${porterResponse}`);
+            } catch (pErr) {
+                console.warn(`⚠️ Porter execution failed:`, pErr);
+            }
+
+            // 3. Update Status
             await updateReminderStatus(reminder.id, "completed");
-            console.log(`✅ Sent reminder [${reminder.id}] to ${reminder.chat_id}`);
+            console.log(`✅ Sent and processed reminder [${reminder.id}] to ${reminder.chat_id}`);
         } catch (err) {
             console.error(`❌ Failed to send reminder [${reminder.id}]:`, err);
         }

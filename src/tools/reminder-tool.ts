@@ -39,7 +39,13 @@ export function registerReminderTools(): void {
                     targetDate.setDate(targetDate.getDate() + 1);
                     targetDate.setHours(9, 0, 0, 0);
                 } else {
-                    targetDate = new Date(String(remind_at));
+                    // Try to handle Sao Paulo local time if no TZ is provided
+                    if (!remind_at.includes("Z") && !remind_at.includes("-") && !remind_at.includes("+")) {
+                        // Append BRT offset (-03:00) assuming standard time
+                        targetDate = new Date(String(remind_at) + " -0300");
+                    } else {
+                        targetDate = new Date(String(remind_at));
+                    }
                 }
 
                 if (isNaN(targetDate.getTime())) {
