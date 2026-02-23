@@ -290,30 +290,69 @@ export class SupabaseMemory {
     }
 
     async getPendingReminders(): Promise<any[]> {
-        try {
-            const { data, error } = await withRetry(async () => {
-                const res = await getClient()
-                    .from("reminders")
-                    .select("*")
-                    .eq("status", "pending")
-                    .lte("remind_at", new Date().toISOString());
-                if (res.error) throw res.error;
-                return res;
-            }, { maxRetries: 2 });
+        return await withRetry(async () => {
+            const { data, error } = await getClient()
+                .from("reminders")
+                .select("*")
+                .eq("status", "pending")
+                .lte("remind_at", new Date().toISOString());
+            if (error) throw error;
             return data ?? [];
-        } catch (error: any) {
-            console.error("❌ Supabase getPendingReminders:", error.message);
+        }, { maxRetries: 2 }).catch(err => {
+            console.error("❌ Supabase getPendingReminders:", err.message);
             return [];
-        }
+        });
     }
 
-    async updateReminderStatus(id: number, status: "sent" | "cancelled"): Promise<void> {
+    async updateReminderStatus(id: string, status: 'completed' | 'failed' | 'cancelled'): Promise<void> {
         await withRetry(async () => {
             const { error } = await getClient()
                 .from("reminders")
-                .update({ status })
+                .update({ status, updated_at: new Date().toISOString() })
                 .eq("id", id);
             if (error) throw error;
-        }, { maxRetries: 2 }).catch(err => console.error(`❌ Supabase updateReminderStatus (${id}, ${status}):`, err.message));
+        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase updateReminderStatus:", err.message));
+    }
+
+    // ── MENTAL STATE VERSIONING ──────────────────────────────
+
+    async snapshotState(chatId: string, stateData: any, reason?: string): Promise<void> {
+        await withRetry(async () => {
+            const { data: latest } = await getClient()
+                .from("mental_states")
+                .select("version")
+                .eq("chat_id", chatId)
+                .order("version", { ascending: false })
+                .limit(1);
+
+            const nextVersion = (latest?.[0]?.version || 0) + 1;
+
+            const { error } = await getClient()
+                .from("mental_states")
+                .insert({
+                    chat_id: chatId,
+                    version: nextVersion,
+                    state_data: stateData,
+                    snapshot_reason: reason
+                });
+            if (error) throw error;
+        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase snapshotState:", err.message));
+    }
+
+    async getLatestState(chatId: string): Promise<any | null> {
+        return await withRetry(async () => {
+            const { data, error } = await getClient()
+                .from("mental_states")
+                .select("state_data")
+                .eq("chat_id", chatId)
+                .order("version", { ascending: false })
+                .limit(1);
+
+            if (error) throw error;
+            return data?.[0]?.state_data || null;
+        }, { maxRetries: 1 }).catch(err => {
+            console.error("❌ Supabase getLatestState:", err.message);
+            return null;
+        });
     }
 }

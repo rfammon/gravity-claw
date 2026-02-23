@@ -1,9 +1,11 @@
 import type { ChatCompletionMessageFunctionToolCall } from "openai/resources/chat/completions/completions.js";
 import { chat, type Message } from "./llm.js";
 import { getTool } from "./tools/registry.js";
-import { saveMessage, getChatHistory, getFacts, getFeedbackSummary, getLatestJudgments } from "./db-provider.js";
+import { saveMessage, getChatHistory, getFacts, getFeedbackSummary, getLatestJudgments, snapshotState, getLatestState } from "./db-provider.js";
+import { rag } from "./rag-provider.js";
 import { cachedSkills } from "./skills.js";
 import { analyzeMessageForPatterns } from "./recommendations.js";
+import { validateToolArgs } from "./utils/validation.js";
 
 const MAX_ITERATIONS = 10;
 
@@ -29,7 +31,14 @@ export async function runAgent(
 
   // 2. Add system prompt with facts
   const facts = await getFacts(chatId);
-  const factSummary = Object.entries(facts).map(([k, v]) => `${k}: ${v}`).join("\n");
+  const semanticFacts = await rag.searchFacts(chatId, userMessage, 5);
+  const mentalState = await getLatestState(chatId);
+
+  const factSummary = [
+    ...Object.entries(facts).map(([k, v]) => `${k}: ${v}`),
+    ...semanticFacts
+  ].join("\n");
+
   const judgments = await getLatestJudgments(chatId);
 
   const systemPrompt: Message = {
@@ -41,6 +50,8 @@ SKILLS: ${cachedSkills || "None"}
 FEEDBACK: ${(await getFeedbackSummary(chatId)) || "None"}
 JULGAMENTOS SOBRE O USUÁRIO (Sua memória interna/diário de opiniões sobre esta pessoa):
 ${judgments || "Nenhum julgamento ainda. Observe o comportamento dele(a)."}
+ESTADO MENTAL (Sua consciência persistente):
+${mentalState ? JSON.stringify(mentalState) : "Tabula rasa. Defina seus objetivos e humor iniciais."}
 
 CORE RULES:
 1. No hallucinations. Report tool errors exactly.
@@ -106,8 +117,16 @@ FORMATTING:
       await saveMessage(chatId, "user", userMessage);
       await saveMessage(chatId, "assistant", finalResponse);
 
-      // If no tools were called this iteration, return the final text
-      // We will need to accumulate media across iterations. See below.
+      // 3. Update Mental State (Versioning)
+      // We'll use a lightweight approach: ask the agent to summarize its state if it changed.
+      // For now, let's just snapshot the current context's "understanding" if the response was long.
+      if (finalResponse.length > 200) {
+        await snapshotState(chatId, {
+          last_interaction: new Date().toISOString(),
+          summary: finalResponse.substring(0, 100) + "..."
+        }, "Automatic interaction snapshot");
+      }
+
       return { text: finalResponse, media: accumulatedMedia };
     }
 
@@ -116,25 +135,78 @@ FORMATTING:
       const fnArgs = JSON.parse(toolCall.function.arguments || "{}");
       const tool = getTool(fnName);
 
+      // ── CRITIC PASS (Self-Review for Sensitivity) ──────────
+      const SENSITIVE_TOOLS = ["trello", "supabase_query", "delete_reminder"];
+      if (SENSITIVE_TOOLS.includes(fnName)) {
+        console.log(`🔍 critic: Reviewing high-stakes tool call "${fnName}"...`);
+        const criticPrompt = `You are a strict REASONING CRITIC. 
+Review the following proposed tool call for accuracy and safety.
+TOOL: ${fnName}
+ARGS: ${JSON.stringify(fnArgs, null, 2)}
+
+If the tool call is perfect and safe, respond with "APPROVED".
+If you see any hallucination, error, or safety risk, respond with a correction or "REJECTED: [reason]".`;
+
+        try {
+          const reviewResponse = await chat([
+            ...messages,
+            { role: "system", content: criticPrompt }
+          ]);
+          const reviewText = reviewResponse.choices[0].message.content || "";
+          if (!reviewText.toUpperCase().includes("APPROVED")) {
+            console.warn(`🛑 critic rejected tool call: ${reviewText}`);
+            const resultText = JSON.stringify({
+              error: "CRITIC_REJECTION",
+              message: `The reasoning critic rejected this tool call: ${reviewText}. Please rethink your approach.`
+            });
+            // Skip execution and add to history
+            messages.push({
+              role: "assistant",
+              content: null,
+              tool_calls: [toolCall]
+            });
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: resultText
+            });
+            continue;
+          }
+        } catch (e) {
+          console.warn("⚠️ Critic pass failed, proceeding with caution...");
+        }
+      }
+
       let resultText: string;
       if (!tool) {
         resultText = JSON.stringify({ error: "Unknown tool: " + fnName });
       } else {
-        try {
-          const ctx = { chatId, userId };
-          const rawResult = await tool.execute(fnArgs, ctx);
-          if (typeof rawResult === 'string') {
-            resultText = rawResult;
-          } else {
-            resultText = rawResult.text;
-            if (rawResult.media) {
-              accumulatedMedia.push(...rawResult.media);
-            }
-          }
-        } catch (err) {
+        // Strict Validation Pass
+        const validation = validateToolArgs(tool.parameters, fnArgs);
+        if (!validation.valid) {
+          console.warn(`🛑 Hallucination detected in tool call "${fnName}": ${validation.error}`);
           resultText = JSON.stringify({
-            error: "Tool threw: " + (err instanceof Error ? err.message : String(err)),
+            error: "HALUCINATION_PREVENTION_TRIGGERED",
+            message: `Your tool call for "${fnName}" was invalid: ${validation.error}. Please correct the parameters and try again.`,
+            accepted_parameters: tool.parameters
           });
+        } else {
+          try {
+            const ctx = { chatId, userId };
+            const rawResult = await tool.execute(fnArgs, ctx);
+            if (typeof rawResult === 'string') {
+              resultText = rawResult;
+            } else {
+              resultText = rawResult.text;
+              if (rawResult.media) {
+                accumulatedMedia.push(...rawResult.media);
+              }
+            }
+          } catch (err) {
+            resultText = JSON.stringify({
+              error: "Tool threw: " + (err instanceof Error ? err.message : String(err)),
+            });
+          }
         }
       }
 

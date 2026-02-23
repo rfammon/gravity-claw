@@ -22,7 +22,7 @@ export async function pollReminders() {
     for (const reminder of pending) {
         try {
             await sendTelegramMessage(reminder.chat_id, `⏰ *LEMBRETE:* ${reminder.reminder_text}`);
-            await updateReminderStatus(reminder.id, "sent");
+            await updateReminderStatus(reminder.id, "completed");
             console.log(`✅ Sent reminder [${reminder.id}] to ${reminder.chat_id}`);
         } catch (err) {
             console.error(`❌ Failed to send reminder [${reminder.id}]:`, err);

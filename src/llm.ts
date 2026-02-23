@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { getOpenAITools } from "./tools/registry.js";
 import { puterChat } from "./llm-utils.js";
 import { withRetry } from "./utils/network.js";
+import { ollamaChat } from "./ollama.js";
 
 // ── clients ──────────────────────────────────────────────
 const openRouterClient = new OpenAI({
@@ -28,7 +29,11 @@ const MODELS = {
         standard: "zai-org/GLM-5-FP8",
     },
     openRouter: {
-        standard: "google/gemini-2.0-flash-001", // Upgrade from Qwen to reduce hallucinations
+        standard: "google/gemini-2.0-flash-001",
+    },
+    ollama: {
+        simple: "qwen2.5:0.5b",
+        standard: "llama3.2:3b",
     }
 };
 
@@ -62,6 +67,27 @@ export async function chat(
         messages: sanitizedMessages,
         tools: tools.length > 0 ? tools : undefined,
     };
+
+    // ── CHECK FOR SIMPLE TASK (Local Ollama Priority) ──────────
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
+    const isSimpleTask = typeof lastUserMessage === 'string' &&
+        (lastUserMessage.toLowerCase().includes("status report") ||
+            lastUserMessage.length < 20);
+
+    if (isSimpleTask) {
+        try {
+            console.log(`🤖 Requesting LLM (Simple Task: Ollama [${MODELS.ollama.simple}])...`);
+            const text = await withRetry(
+                () => ollamaChat(sanitizedMessages as any, MODELS.ollama.simple),
+                { maxRetries: 1 }
+            );
+            return {
+                choices: [{ message: { role: "assistant", content: text } }]
+            };
+        } catch (error) {
+            console.warn(`⚠️ Ollama simple task failed, falling back to cloud stack...`);
+        }
+    }
 
     // ── PRIMARY: PUTER ─────────────────────────────────────────
     try {
@@ -118,7 +144,27 @@ export async function chat(
         console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - orStartTime}ms`);
         return response;
     } catch (error) {
-        console.error(`❌ All LLM providers failed! Last error: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`⚠️ OpenRouter failed. Trying Local Ollama as ultimate fallback...`);
+    }
+
+    // ── FALLBACK 3: OLLAMA (Local) ─────────────────────────────
+    try {
+        console.log(`🤖 Requesting LLM (Final Fallback: Ollama [${MODELS.ollama.standard}])...`);
+        const text = await withRetry(
+            () => ollamaChat(sanitizedMessages as any, MODELS.ollama.standard),
+            { maxRetries: 1 }
+        );
+        return {
+            choices: [{
+                message: {
+                    role: "assistant",
+                    content: text,
+                    tool_calls: undefined
+                }
+            }]
+        };
+    } catch (error) {
+        console.error(`❌ All LLM providers failed (including local)! Last error: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
     }
 }

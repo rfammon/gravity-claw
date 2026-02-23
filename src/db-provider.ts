@@ -37,7 +37,11 @@ export interface IMemoryProvider {
     // ── Reminders ──
     addReminder(chatId: string, userId: number, text: string, remindAt: Date, metadata?: any): void | Promise<void>;
     getPendingReminders(): any[] | Promise<any[]>;
-    updateReminderStatus(id: number, status: "sent" | "cancelled"): void | Promise<void>;
+    updateReminderStatus(id: string, status: 'completed' | 'failed' | 'cancelled'): void | Promise<void>;
+
+    // ── Mental State ──
+    snapshotState(chatId: string, stateData: any, reason?: string): void | Promise<void>;
+    getLatestState(chatId: string): any | Promise<any | null>;
 }
 
 // ── Debug: Log Supabase config ───────────────────────────────────────
@@ -109,9 +113,11 @@ async function initializeProvider(): Promise<IMemoryProvider> {
             getLatestJudgments: mem.getLatestJudgments,
             getMemoriesSince: mem.getMemoriesSince,
             getJudgmentsSince: mem.getJudgmentsSince,
-            addReminder: () => { }, // Not supported in legacy
-            getPendingReminders: () => [], // Not supported in legacy
-            updateReminderStatus: () => { }, // Not supported in legacy
+            addReminder: () => { },
+            getPendingReminders: () => [],
+            updateReminderStatus: () => { },
+            snapshotState: () => { },
+            getLatestState: () => null,
         };
     }
 }
@@ -258,6 +264,15 @@ function createSQLiteProvider(db: any): IMemoryProvider {
         updateReminderStatus: (id, status) => {
             const stmt = db.prepare("UPDATE reminders SET status = ? WHERE id = ?");
             stmt.run(status, id);
+        },
+
+        snapshotState: (chatId, stateData, reason) => {
+            // Not implemented for SQLite yet, but needs the method to satisfy interface
+            console.warn("⚠️ Mental State snapshots not fully implemented for SQLite yet.");
+        },
+
+        getLatestState: (chatId) => {
+            return null; // Not implemented for SQLite yet
         }
     };
 }
@@ -306,3 +321,5 @@ export const getJudgmentsSince = (...args: Parameters<IMemoryProvider["getJudgme
 export const addReminder = (...args: Parameters<IMemoryProvider["addReminder"]>) => requireDb().addReminder(...args);
 export const getPendingReminders = (...args: Parameters<IMemoryProvider["getPendingReminders"]>) => requireDb().getPendingReminders(...args);
 export const updateReminderStatus = (...args: Parameters<IMemoryProvider["updateReminderStatus"]>) => requireDb().updateReminderStatus(...args);
+export const snapshotState = (...args: Parameters<IMemoryProvider["snapshotState"]>) => requireDb().snapshotState(...args);
+export const getLatestState = (...args: Parameters<IMemoryProvider["getLatestState"]>) => requireDb().getLatestState(...args);
