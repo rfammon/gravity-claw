@@ -9,6 +9,7 @@ import { writeFileSync, readFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import dns from "node:dns/promises";
+import { withRetry } from "./utils/network.js";
 
 import { bot } from "./telegram-client.js";
 import { sendTelegramPhoto } from "./telegram-utils.js";
@@ -66,16 +67,18 @@ bot.on("message:text", async (ctx) => {
 
         // Send Text
         if (result.text.length <= 4096) {
-            const sent = await ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => {
-                return ctx.reply(result.text);
-            });
+            const sent = await withRetry(
+                () => ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(result.text)),
+                { maxRetries: 2 }
+            );
             if (sent) trackBotMessage(String(chatId), sent.message_id, result.text);
         } else {
             const chunks = splitMessage(result.text, 4096);
             for (const chunk of chunks) {
-                const sent = await ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => {
-                    return ctx.reply(chunk);
-                });
+                const sent = await withRetry(
+                    () => ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk)),
+                    { maxRetries: 2 }
+                );
                 if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
             }
         }
@@ -108,9 +111,9 @@ bot.on("message:voice", async (ctx) => {
 
     try {
         // 1. Download voice file from Telegram
-        const file = await ctx.getFile();
+        const file = await withRetry(() => ctx.getFile(), { maxRetries: 2 });
         const fileUrl = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
-        const response = await fetch(fileUrl);
+        const response = await withRetry(() => fetch(fileUrl), { maxRetries: 2 });
         const audioBuffer = Buffer.from(await response.arrayBuffer());
 
         console.log(`📥 [${chatId}] Downloaded ${audioBuffer.length} bytes`);
@@ -136,7 +139,10 @@ bot.on("message:voice", async (ctx) => {
 
             // 5. Send voice response
             indicator.stop();
-            await ctx.replyWithVoice(new InputFile(speechBuffer, "response.mp3"));
+            await withRetry(
+                () => ctx.replyWithVoice(new InputFile(speechBuffer, "response.mp3")),
+                { maxRetries: 2 }
+            );
         } catch (ttsError) {
             indicator.stop();
             console.warn("⚠️ TTS failed:", ttsError);
@@ -144,12 +150,18 @@ bot.on("message:voice", async (ctx) => {
 
         // 6. Send the text response alongside the voice (or as fallback)
         if (agentResult.text.length <= 4096) {
-            const sent = await ctx.reply(agentResult.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(agentResult.text));
+            const sent = await withRetry(
+                () => ctx.reply(agentResult.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(agentResult.text)),
+                { maxRetries: 2 }
+            );
             if (sent) trackBotMessage(String(chatId), sent.message_id, agentResult.text);
         } else {
             const chunks = splitMessage(agentResult.text, 4096);
             for (const chunk of chunks) {
-                const sent = await ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk));
+                const sent = await withRetry(
+                    () => ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk)),
+                    { maxRetries: 2 }
+                );
                 if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
             }
         }
@@ -189,9 +201,9 @@ bot.on("message:photo", async (ctx) => {
         // 1. Download highest resolution photo
         const photos = ctx.message.photo;
         const bestPhoto = photos[photos.length - 1]; // Last = highest res
-        const file = await ctx.api.getFile(bestPhoto.file_id);
+        const file = await withRetry(() => ctx.api.getFile(bestPhoto.file_id), { maxRetries: 2 });
         const fileUrl = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
-        const imgResponse = await fetch(fileUrl);
+        const imgResponse = await withRetry(() => fetch(fileUrl), { maxRetries: 2 });
         const imageBuffer = Buffer.from(await imgResponse.arrayBuffer());
 
         console.log(`📥 [${chatId}] Downloaded ${(imageBuffer.length / 1024).toFixed(0)}KB image`);
@@ -217,12 +229,18 @@ bot.on("message:photo", async (ctx) => {
         // 5. Send response text
         indicator.stop();
         if (result.text.length <= 4096) {
-            const sent = await ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(result.text));
+            const sent = await withRetry(
+                () => ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(result.text)),
+                { maxRetries: 2 }
+            );
             if (sent) trackBotMessage(String(chatId), sent.message_id, result.text);
         } else {
             const chunks = splitMessage(result.text, 4096);
             for (const chunk of chunks) {
-                const sent = await ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk));
+                const sent = await withRetry(
+                    () => ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk)),
+                    { maxRetries: 2 }
+                );
                 if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
             }
         }
@@ -426,7 +444,10 @@ export async function startBot(): Promise<void> {
                         // Notificar que inicializou
                         for (const userId of config.allowedUserIds) {
                             try {
-                                await bot.api.sendMessage(userId, "🚀 *Gravity Claw reativado.*\nO sistema superou a reinicialização/rede e está em funcionamento no plano de fundo.", { parse_mode: "Markdown" });
+                                await withRetry(
+                                    () => bot.api.sendMessage(userId, "🚀 *Gravity Claw reativado.*\nO sistema superou a reinicialização/rede e está em funcionamento no plano de fundo.", { parse_mode: "Markdown" }),
+                                    { maxRetries: 2 }
+                                );
                             } catch (err) {
                                 // Ignore
                             }

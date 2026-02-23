@@ -6,6 +6,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { synthesizeWithMoss } from "./moss-bridge.js";
+import { withRetry } from "./utils/network.js";
 
 // Initialize APIs
 const groq = new Groq({ apiKey: config.groqApiKey });
@@ -33,10 +34,13 @@ export async function transcribeVoice(buffer: Buffer): Promise<string> {
 
         console.log(`🎙️ Sending to Groq (${tmpPath})...`);
         const startTime = Date.now();
-        const transcription = await groq.audio.transcriptions.create({
-            file: fs.createReadStream(tmpPath),
-            model: "whisper-large-v3",
-        });
+        const transcription = await withRetry(
+            () => groq.audio.transcriptions.create({
+                file: fs.createReadStream(tmpPath),
+                model: "whisper-large-v3",
+            }),
+            { maxRetries: 2 }
+        );
 
         console.log(`🎙️ Transcribed in ${Date.now() - startTime}ms: "${transcription.text}"`);
         return transcription.text;
@@ -111,7 +115,10 @@ export async function synthesizeSpeech(rawText: string, provider: 'elevenlabs' |
             pitch: "+0Hz",
         });
 
-        await tts.ttsPromise(text, tmpAudioPath);
+        await withRetry(
+            () => tts.ttsPromise(text, tmpAudioPath),
+            { maxRetries: 2 }
+        );
         const audioBuffer = fs.readFileSync(tmpAudioPath);
         return audioBuffer;
     } catch (error) {

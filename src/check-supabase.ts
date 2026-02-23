@@ -1,4 +1,4 @@
-import { getClient } from "./supabase-db.ts";
+import { getClient } from "./supabase-db.js";
 
 async function checkSupabase() {
     console.log("🔍 Checking Supabase connectivity...");

@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { withRetry } from "./utils/network.js";
 
 // ─── OCR Space API (Primary) ────────────────────────────────────────
 async function ocrSpaceExtract(imageBuffer: Buffer, language: string = "por"): Promise<string> {
@@ -16,10 +17,13 @@ async function ocrSpaceExtract(imageBuffer: Buffer, language: string = "por"): P
     console.log(`👁️ OCR Space: sending ${(imageBuffer.length / 1024).toFixed(0)}KB image (lang=${language})...`);
     const startTime = Date.now();
 
-    const response = await fetch("https://api.ocr.space/parse/image", {
-        method: "POST",
-        body: form,
-    });
+    const response = await withRetry(
+        () => fetch("https://api.ocr.space/parse/image", {
+            method: "POST",
+            body: form,
+        }),
+        { maxRetries: 2 }
+    );
 
     if (!response.ok) {
         throw new Error(`OCR Space HTTP ${response.status}: ${response.statusText}`);

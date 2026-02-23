@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { config } from "./config.js";
+import { withRetry } from "./utils/network.js";
 
 // Inline types to avoid circular import with db-provider
 interface MemoryEntry {
@@ -29,63 +30,75 @@ export class SupabaseMemory {
     readonly backend = "supabase" as const;
 
     async saveMessage(chatId: string, role: string, content: string, metadata?: any): Promise<void> {
-        const { error } = await getClient()
-            .from("memories")
-            .insert({
-                chat_id: chatId,
-                role,
-                content,
-                metadata: metadata ?? null,
-            });
-        if (error) console.error("❌ Supabase saveMessage:", error.message);
+        await withRetry(async () => {
+            const { error } = await getClient()
+                .from("memories")
+                .insert({
+                    chat_id: chatId,
+                    role,
+                    content,
+                    metadata: metadata ?? null,
+                });
+            if (error) throw error;
+        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase saveMessage:", err.message));
     }
 
     async getChatHistory(chatId: string, limit: number = 50): Promise<MemoryEntry[]> {
-        const { data, error } = await getClient()
-            .from("memories")
-            .select("role, content, created_at")
-            .eq("chat_id", chatId)
-            .order("created_at", { ascending: false })
-            .limit(limit);
+        try {
+            const { data, error } = await withRetry(async () => {
+                const res = await getClient()
+                    .from("memories")
+                    .select("role, content, created_at")
+                    .eq("chat_id", chatId)
+                    .order("created_at", { ascending: false })
+                    .limit(limit);
+                if (res.error) throw res.error;
+                return res;
+            }, { maxRetries: 2 });
 
-        if (error) {
+            return (data ?? []).reverse().map((row) => ({
+                role: row.role as MemoryEntry["role"],
+                content: row.content,
+                timestamp: row.created_at,
+            }));
+        } catch (error: any) {
             console.error("❌ Supabase getChatHistory:", error.message);
             return [];
         }
-
-        return (data ?? []).reverse().map((row) => ({
-            role: row.role as MemoryEntry["role"],
-            content: row.content,
-            timestamp: row.created_at,
-        }));
     }
 
     async storeFact(chatId: string, key: string, value: string): Promise<void> {
-        const { error } = await getClient()
-            .from("facts")
-            .upsert(
-                { chat_id: chatId, key, value, updated_at: new Date().toISOString() },
-                { onConflict: "chat_id,key" }
-            );
-        if (error) console.error("❌ Supabase storeFact:", error.message);
+        await withRetry(async () => {
+            const { error } = await getClient()
+                .from("facts")
+                .upsert(
+                    { chat_id: chatId, key, value, updated_at: new Date().toISOString() },
+                    { onConflict: "chat_id,key" }
+                );
+            if (error) throw error;
+        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase storeFact:", err.message));
     }
 
     async getFacts(chatId: string): Promise<Record<string, string>> {
-        const { data, error } = await getClient()
-            .from("facts")
-            .select("key, value")
-            .eq("chat_id", chatId);
+        try {
+            const { data, error } = await withRetry(async () => {
+                const res = await getClient()
+                    .from("facts")
+                    .select("key, value")
+                    .eq("chat_id", chatId);
+                if (res.error) throw res.error;
+                return res;
+            }, { maxRetries: 2 });
 
-        if (error) {
+            const facts: Record<string, string> = {};
+            (data ?? []).forEach((row) => {
+                facts[row.key] = row.value;
+            });
+            return facts;
+        } catch (error: any) {
             console.error("❌ Supabase getFacts:", error.message);
             return {};
         }
-
-        const facts: Record<string, string> = {};
-        (data ?? []).forEach((row) => {
-            facts[row.key] = row.value;
-        });
-        return facts;
     }
 
     async clearHistory(chatId: string): Promise<void> {
@@ -261,38 +274,46 @@ export class SupabaseMemory {
     // ── Reminders ──────────────────────────────────────────────
 
     async addReminder(chatId: string, userId: number, text: string, remindAt: Date, metadata?: any): Promise<void> {
-        const { error } = await getClient()
-            .from("reminders")
-            .insert({
-                chat_id: chatId,
-                user_id: userId,
-                reminder_text: text,
-                remind_at: remindAt.toISOString(),
-                status: "pending",
-                metadata: metadata ?? null,
-            });
-        if (error) console.error("❌ Supabase addReminder:", error.message);
+        await withRetry(async () => {
+            const { error } = await getClient()
+                .from("reminders")
+                .insert({
+                    chat_id: chatId,
+                    user_id: userId,
+                    reminder_text: text,
+                    remind_at: remindAt.toISOString(),
+                    status: "pending",
+                    metadata: metadata ?? null,
+                });
+            if (error) throw error;
+        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase addReminder:", err.message));
     }
 
     async getPendingReminders(): Promise<any[]> {
-        const { data, error } = await getClient()
-            .from("reminders")
-            .select("*")
-            .eq("status", "pending")
-            .lte("remind_at", new Date().toISOString());
-
-        if (error) {
+        try {
+            const { data, error } = await withRetry(async () => {
+                const res = await getClient()
+                    .from("reminders")
+                    .select("*")
+                    .eq("status", "pending")
+                    .lte("remind_at", new Date().toISOString());
+                if (res.error) throw res.error;
+                return res;
+            }, { maxRetries: 2 });
+            return data ?? [];
+        } catch (error: any) {
             console.error("❌ Supabase getPendingReminders:", error.message);
             return [];
         }
-        return data ?? [];
     }
 
     async updateReminderStatus(id: number, status: "sent" | "cancelled"): Promise<void> {
-        const { error } = await getClient()
-            .from("reminders")
-            .update({ status })
-            .eq("id", id);
-        if (error) console.error(`❌ Supabase updateReminderStatus (${id}, ${status}):`, error.message);
+        await withRetry(async () => {
+            const { error } = await getClient()
+                .from("reminders")
+                .update({ status })
+                .eq("id", id);
+            if (error) throw error;
+        }, { maxRetries: 2 }).catch(err => console.error(`❌ Supabase updateReminderStatus (${id}, ${status}):`, err.message));
     }
 }

@@ -94,7 +94,7 @@ FORMATTING:
     messages.push(assistantMessage as Message);
 
     const toolCalls = (assistantMessage.tool_calls ?? []).filter(
-      (tc): tc is ChatCompletionMessageFunctionToolCall =>
+      (tc: any): tc is ChatCompletionMessageFunctionToolCall =>
         tc.type === "function"
     );
 

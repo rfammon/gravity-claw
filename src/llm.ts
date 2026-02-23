@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { config } from "./config.js";
 import { getOpenAITools } from "./tools/registry.js";
+import { puterChat } from "./llm-utils.js";
+import { withRetry } from "./utils/network.js";
 
 // ── clients ──────────────────────────────────────────────
 const openRouterClient = new OpenAI({
@@ -19,19 +21,18 @@ const modalClient = new OpenAI({
 
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
+    puter: {
+        standard: config.puterDefaultModel || "moonshotai/kimi-k2.5",
+    },
     modal: {
         standard: "zai-org/GLM-5-FP8",
-        thinking: "zai-org/GLM-5-FP8",
-        fast: "zai-org/GLM-5-FP8",
     },
     openRouter: {
-        standard: "qwen/qwen-2.5-72b-instruct",
-        thinking: "qwen/qwen3-235b-a22b-thinking-2507",
-        fast: "qwen/qwen-2.5-72b-instruct",
+        standard: "google/gemini-2.0-flash-001", // Upgrade from Qwen to reduce hallucinations
     }
 };
 
-// ── State (Simple thinking level state - could be moved to memory.ts later) ─
+// ── State (Simple thinking level state) ─
 let globalThinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'off';
 
 export function setThinkingLevel(level: 'off' | 'low' | 'medium' | 'high') {
@@ -43,25 +44,11 @@ export type Message = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
 export async function chat(
     messages: Message[]
-): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+): Promise<OpenAI.Chat.Completions.ChatCompletion | any> {
     const tools = getOpenAITools();
-
-    // Determine models based on thinking level
-    let modalModel = MODELS.modal.standard;
-    let openRouterModel = MODELS.openRouter.standard;
-    if (globalThinkingLevel === 'high') {
-        modalModel = MODELS.modal.thinking;
-        openRouterModel = MODELS.openRouter.thinking;
-    }
-    if (globalThinkingLevel === 'off') {
-        modalModel = MODELS.modal.fast;
-        openRouterModel = MODELS.openRouter.fast;
-    }
-
-    console.log(`🤖 Requesting LLM (Primary: Modal [${modalModel}], Fallback: OpenRouter [${openRouterModel}])...`);
     const startTime = Date.now();
 
-    // Sanitize messages for Gemini via OpenRouter (null content crashes the request)
+    // Sanitize messages
     const sanitizedMessages = messages.map(msg => {
         if (msg.role === 'assistant' && msg.content === null && msg.tool_calls) {
             const { content, ...rest } = msg as any;
@@ -72,25 +59,67 @@ export async function chat(
 
     const callArgs: any = {
         max_tokens: 4096,
-        messages: sanitizedMessages, // Agent now handles system prompt injection
+        messages: sanitizedMessages,
         tools: tools.length > 0 ? tools : undefined,
     };
 
+    // ── PRIMARY: PUTER ─────────────────────────────────────────
     try {
-        const response = await modalClient.chat.completions.create({
-            model: modalModel,
-            ...callArgs
-        });
-        console.log(`✅ LLM Response received from Modal in ${Date.now() - startTime}ms`);
+        console.log(`🤖 Requesting LLM (Primary: Puter [${MODELS.puter.standard}])...`);
+        const text = await withRetry(
+            () => puterChat(sanitizedMessages as any, MODELS.puter.standard),
+            { maxRetries: 2 }
+        );
+
+        console.log(`✅ LLM Response received from Puter in ${Date.now() - startTime}ms`);
+
+        // Mocking OpenAI response structure for compatibility with agent.ts
+        return {
+            choices: [{
+                message: {
+                    role: "assistant",
+                    content: text,
+                    tool_calls: undefined // Puter standard chat doesn't support tools easily yet via this wrapper
+                }
+            }]
+        };
+    } catch (error) {
+        console.warn(`⚠️ Puter failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal...`);
+    }
+
+    // ── FALLBACK 1: MODAL ──────────────────────────────────────
+    try {
+        console.log(`🤖 Requesting LLM (Fallback 1: Modal [${MODELS.modal.standard}])...`);
+        const modalStartTime = Date.now();
+        const response = await withRetry(
+            () => modalClient.chat.completions.create({
+                model: MODELS.modal.standard,
+                ...callArgs
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
         return response;
     } catch (error) {
-        console.warn(`⚠️ Modal API failed: ${error instanceof Error ? error.message : String(error)}. Falling back to OpenRouter...`);
-        const fallbackStartTime = Date.now();
-        const response = await openRouterClient.chat.completions.create({
-            model: openRouterModel,
-            ...callArgs
-        });
-        console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - fallbackStartTime}ms`);
+        console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenRouter...`);
+    }
+
+    // ── FALLBACK 2: OPENROUTER ─────────────────────────────────
+    try {
+        console.log(`🤖 Requesting LLM (Fallback 2: OpenRouter [${MODELS.openRouter.standard}])...`);
+        const orStartTime = Date.now();
+        const response = await withRetry(
+            () => openRouterClient.chat.completions.create({
+                model: MODELS.openRouter.standard,
+                ...callArgs
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - orStartTime}ms`);
         return response;
+    } catch (error) {
+        console.error(`❌ All LLM providers failed! Last error: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
     }
 }
+
