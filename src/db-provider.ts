@@ -306,20 +306,20 @@ function requireDb(): IMemoryProvider {
 }
 
 // Convenience re-exports
-export const saveMessage = (...args: Parameters<IMemoryProvider["saveMessage"]>) => requireDb().saveMessage(...args);
-export const getChatHistory = (...args: Parameters<IMemoryProvider["getChatHistory"]>) => requireDb().getChatHistory(...args);
-export const storeFact = (...args: Parameters<IMemoryProvider["storeFact"]>) => requireDb().storeFact(...args);
-export const getFacts = (...args: Parameters<IMemoryProvider["getFacts"]>) => requireDb().getFacts(...args);
-export const clearHistory = (...args: Parameters<IMemoryProvider["clearHistory"]>) => requireDb().clearHistory(...args);
-export const trackBotMessage = (...args: Parameters<IMemoryProvider["trackBotMessage"]>) => requireDb().trackBotMessage(...args);
-export const saveFeedback = (...args: Parameters<IMemoryProvider["saveFeedback"]>) => requireDb().saveFeedback(...args);
-export const getFeedbackSummary = (...args: Parameters<IMemoryProvider["getFeedbackSummary"]>) => requireDb().getFeedbackSummary(...args);
-export const saveJudgment = (...args: Parameters<IMemoryProvider["saveJudgment"]>) => requireDb().saveJudgment(...args);
-export const getLatestJudgments = (...args: Parameters<IMemoryProvider["getLatestJudgments"]>) => requireDb().getLatestJudgments(...args);
-export const getMemoriesSince = (...args: Parameters<IMemoryProvider["getMemoriesSince"]>) => requireDb().getMemoriesSince(...args);
-export const getJudgmentsSince = (...args: Parameters<IMemoryProvider["getJudgmentsSince"]>) => requireDb().getJudgmentsSince(...args);
-export const addReminder = (...args: Parameters<IMemoryProvider["addReminder"]>) => requireDb().addReminder(...args);
-export const getPendingReminders = (...args: Parameters<IMemoryProvider["getPendingReminders"]>) => requireDb().getPendingReminders(...args);
-export const updateReminderStatus = (...args: Parameters<IMemoryProvider["updateReminderStatus"]>) => requireDb().updateReminderStatus(...args);
-export const snapshotState = (...args: Parameters<IMemoryProvider["snapshotState"]>) => requireDb().snapshotState(...args);
-export const getLatestState = (...args: Parameters<IMemoryProvider["getLatestState"]>) => requireDb().getLatestState(...args);
+export const saveMessage = async (...args: Parameters<IMemoryProvider["saveMessage"]>) => (await getDb()).saveMessage(...args);
+export const getChatHistory = async (...args: Parameters<IMemoryProvider["getChatHistory"]>) => (await getDb()).getChatHistory(...args);
+export const storeFact = async (...args: Parameters<IMemoryProvider["storeFact"]>) => (await getDb()).storeFact(...args);
+export const getFacts = async (...args: Parameters<IMemoryProvider["getFacts"]>) => (await getDb()).getFacts(...args);
+export const clearHistory = async (...args: Parameters<IMemoryProvider["clearHistory"]>) => (await getDb()).clearHistory(...args);
+export const trackBotMessage = async (...args: Parameters<IMemoryProvider["trackBotMessage"]>) => (await getDb()).trackBotMessage(...args);
+export const saveFeedback = async (...args: Parameters<IMemoryProvider["saveFeedback"]>) => (await getDb()).saveFeedback(...args);
+export const getFeedbackSummary = async (...args: Parameters<IMemoryProvider["getFeedbackSummary"]>) => (await getDb()).getFeedbackSummary(...args);
+export const saveJudgment = async (...args: Parameters<IMemoryProvider["saveJudgment"]>) => (await getDb()).saveJudgment(...args);
+export const getLatestJudgments = async (...args: Parameters<IMemoryProvider["getLatestJudgments"]>) => (await getDb()).getLatestJudgments(...args);
+export const getMemoriesSince = async (...args: Parameters<IMemoryProvider["getMemoriesSince"]>) => (await getDb()).getMemoriesSince(...args);
+export const getJudgmentsSince = async (...args: Parameters<IMemoryProvider["getJudgmentsSince"]>) => (await getDb()).getJudgmentsSince(...args);
+export const addReminder = async (...args: Parameters<IMemoryProvider["addReminder"]>) => (await getDb()).addReminder(...args);
+export const getPendingReminders = async (...args: Parameters<IMemoryProvider["getPendingReminders"]>) => (await getDb()).getPendingReminders(...args);
+export const updateReminderStatus = async (...args: Parameters<IMemoryProvider["updateReminderStatus"]>) => (await getDb()).updateReminderStatus(...args);
+export const snapshotState = async (...args: Parameters<IMemoryProvider["snapshotState"]>) => (await getDb()).snapshotState(...args);
+export const getLatestState = async (...args: Parameters<IMemoryProvider["getLatestState"]>) => (await getDb()).getLatestState(...args);
