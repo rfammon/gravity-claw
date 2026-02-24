@@ -24,7 +24,7 @@ function optionalEnv(name: string, defaultValue: string = ""): string {
         return defaultValue;
     }
     // Mask sensitive values
-    const masked = value.length > 20 
+    const masked = value.length > 20
         ? value.substring(0, 10) + "..." + value.substring(value.length - 6)
         : "***";
     console.log(`   ${name}: ✅ Loaded (${masked})`);
@@ -36,7 +36,7 @@ function parseUserIds(raw: string): number[] {
         console.error("❌ ALLOWED_USER_IDS is empty!");
         return [];
     }
-    
+
     return raw
         .split(",")
         .map((id) => id.trim())
@@ -81,33 +81,33 @@ export const config = {
     openRouterKey,
     groqApiKey,
     allowedUserIds,
-    
+
     // Feature flags
     airGappedMode: process.env.AIR_GAPPED_MODE === "true",
-    
+
     // Optional - External services
     modalBaseUrl,
     modalApiKey,
     ocrSpaceApiKey,
-    
+
     // ── Supabase (optional — enables cloud DB) ───────────
     supabaseUrl,
     supabaseServiceKey,
-    
+
     // ── Security ──────────────────────────────────────────
     masterKey,
-    
+
     // ── Ollama Fallback ───────────────────────────────────
-    ollamaBaseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1",
+    ollamaBaseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
     ollamaApiKey: process.env.OLLAMA_API_KEY || "",
-    
+
     // ── Performance ────────────────────────────────────────
     lowResourceMode: process.env.LOW_RESOURCE_MODE === "true",
     maxConcurrentTools: parseInt(process.env.MAX_CONCURRENT_TOOLS || "4"),
-    
+
     // ── Puter (Code Agent Fallback) ────────────────────────
     puterDefaultModel,
-    
+
     // ── Puter Token ─────────────────────────────────────────
     puterToken: process.env.PUTER_TOKEN || "",
 } as const;
