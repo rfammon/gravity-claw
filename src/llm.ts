@@ -47,6 +47,47 @@ export function setThinkingLevel(level: 'off' | 'low' | 'medium' | 'high') {
 // ── chat ─────────────────────────────────────────────────
 export type Message = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
+function parseTextToToolCalls(text: string): { content: string, tool_calls?: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] } {
+    let content = text;
+    const tool_calls: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] = [];
+
+    // Support both <functioncalls> and <function_calls>
+    const functionCallsRegex = /<function_?calls>([\s\S]*?)<\/function_?calls>/gi;
+    const invokeRegex = /<invoke\s+name="([^"]+)">([\s\S]*?)<\/invoke>/gi;
+    const paramRegex = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/gi;
+
+    let callIndex = 0;
+
+    content = text.replace(functionCallsRegex, (substring, innerBlocks) => {
+        let invokeMatch;
+        while ((invokeMatch = invokeRegex.exec(innerBlocks)) !== null) {
+            const name = invokeMatch[1];
+            const paramsInner = invokeMatch[2];
+            const args: any = {};
+
+            let paramMatch;
+            while ((paramMatch = paramRegex.exec(paramsInner)) !== null) {
+                args[paramMatch[1]] = paramMatch[2].trim();
+            }
+
+            tool_calls.push({
+                id: `call_${Date.now()}_${callIndex++}`,
+                type: "function",
+                function: {
+                    name,
+                    arguments: JSON.stringify(args)
+                }
+            });
+        }
+        return ""; // Remove from text
+    });
+
+    return {
+        content: content.trim(),
+        tool_calls: tool_calls.length > 0 ? tool_calls as any[] : undefined
+    };
+}
+
 export async function chat(
     messages: Message[]
 ): Promise<OpenAI.Chat.Completions.ChatCompletion | any> {
@@ -60,6 +101,19 @@ export async function chat(
             return rest as Message;
         }
         return msg;
+    });
+
+    const systemInstruction = tools.length > 0 ? `\n\n[FERRAMENTAS DISPONÍVEIS]\nVocê DEVE usar OBRIGATORIAMENTE o seguinte formato XML para invocar funções:\n<function_calls>\n` +
+        tools.map((t: any) => `<invoke name="${t.function.name}">\n${Object.keys(t.function.parameters?.properties || {}).map(
+            (p: any) => `<parameter name="${p}">[valor]</parameter>`
+        ).join("\n")
+            }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
+
+    const messagesWithToolsInstruction = sanitizedMessages.map((m, i) => {
+        if (i === 0 && m.role === "system") {
+            return { ...m, content: String(m.content) + systemInstruction };
+        }
+        return m;
     });
 
     const callArgs: any = {
@@ -78,7 +132,7 @@ export async function chat(
         try {
             console.log(`🤖 Requesting LLM (Simple Task: Ollama [${MODELS.ollama.simple}])...`);
             const text = await withRetry(
-                () => ollamaChat(sanitizedMessages as any, MODELS.ollama.simple),
+                () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.simple),
                 { maxRetries: 1 }
             );
             return {
@@ -93,19 +147,21 @@ export async function chat(
     try {
         console.log(`🤖 Requesting LLM (Primary: Puter [${MODELS.puter.standard}])...`);
         const text = await withRetry(
-            () => puterChat(sanitizedMessages as any, MODELS.puter.standard),
+            () => puterChat(messagesWithToolsInstruction as any, MODELS.puter.standard),
             { maxRetries: 2 }
         );
 
         console.log(`✅ LLM Response received from Puter in ${Date.now() - startTime}ms`);
+
+        const parsed = parseTextToToolCalls(text);
 
         // Mocking OpenAI response structure for compatibility with agent.ts
         return {
             choices: [{
                 message: {
                     role: "assistant",
-                    content: text,
-                    tool_calls: undefined // Puter standard chat doesn't support tools easily yet via this wrapper
+                    content: parsed.content,
+                    tool_calls: parsed.tool_calls
                 }
             }]
         };
@@ -151,15 +207,18 @@ export async function chat(
     try {
         console.log(`🤖 Requesting LLM (Final Fallback: Ollama [${MODELS.ollama.standard}])...`);
         const text = await withRetry(
-            () => ollamaChat(sanitizedMessages as any, MODELS.ollama.standard),
+            () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.standard),
             { maxRetries: 1 }
         );
+
+        const parsed = parseTextToToolCalls(text);
+
         return {
             choices: [{
                 message: {
                     role: "assistant",
-                    content: text,
-                    tool_calls: undefined
+                    content: parsed.content,
+                    tool_calls: parsed.tool_calls
                 }
             }]
         };
