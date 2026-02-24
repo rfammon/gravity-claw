@@ -27,7 +27,13 @@ export class RAGProvider {
      * Store a new factual memory with its embedding.
      */
     async addFact(chatId: string, content: string, metadata: any = {}): Promise<void> {
-        const embedding = await this.generateEmbedding(content);
+        let embedding: number[];
+        try {
+            embedding = await this.generateEmbedding(content);
+        } catch (error) {
+            console.warn("⚠️ RAG AddFact aborted: Embedding generation failed.");
+            return;
+        }
 
         await withRetry(async () => {
             const { error } = await getClient()
@@ -46,7 +52,13 @@ export class RAGProvider {
      * Search for relevant facts using cosine similarity.
      */
     async searchFacts(chatId: string, query: string, limit: number = 3): Promise<string[]> {
-        const embedding = await this.generateEmbedding(query);
+        let embedding: number[];
+        try {
+            embedding = await this.generateEmbedding(query);
+        } catch (error) {
+            console.warn("⚠️ RAG Search aborted: Embedding generation failed.");
+            return [];
+        }
 
         return await withRetry(async () => {
             // we use rpc for vector search usually, but let's assume a match_documents function exists
