@@ -157,12 +157,12 @@ export async function chat(
     if (isSimpleTask) {
         try {
             console.log(`🤖 Requesting LLM (Simple Task: Ollama [${MODELS.ollama.simple}])...`);
-            const text = await withRetry(
+            const messageObj = await withRetry(
                 () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.simple),
                 { maxRetries: 1 }
             );
             return {
-                choices: [{ message: { role: "assistant", content: text } }]
+                choices: [{ message: messageObj }]
             };
         } catch (error) {
             console.warn(`⚠️ Ollama simple task failed, falling back to cloud stack...`);
@@ -232,12 +232,19 @@ export async function chat(
     // ── FALLBACK 3: OLLAMA (Local) ─────────────────────────────
     try {
         console.log(`🤖 Requesting LLM (Final Fallback: Ollama [${MODELS.ollama.standard}])...`);
-        const text = await withRetry(
-            () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.standard),
+        const messageObj = await withRetry(
+            () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.standard, tools),
             { maxRetries: 1 }
         );
 
-        const parsed = parseTextToToolCalls(text);
+        let parsed;
+        if (messageObj.tool_calls && messageObj.tool_calls.length > 0) {
+            // Native format support!
+            parsed = { content: messageObj.content || "", tool_calls: messageObj.tool_calls };
+        } else {
+            // Fallback to text parsing if native didn't trigger
+            parsed = parseTextToToolCalls(messageObj.content || "");
+        }
 
         return {
             choices: [{

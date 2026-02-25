@@ -7,8 +7,9 @@ import { withRetry } from "./utils/network.js";
  */
 export async function ollamaChat(
     messages: { role: string; content: string }[],
-    model: string = "qwen2.5:0.5b"
-): Promise<string> {
+    model: string = "qwen2.5:0.5b",
+    tools?: any[]
+): Promise<any> {
     const baseUrl = config.ollamaBaseUrl || "http://localhost:11434";
 
     return withRetry(async () => {
@@ -19,6 +20,7 @@ export async function ollamaChat(
                 model,
                 messages,
                 stream: false,
+                tools: tools && tools.length > 0 ? tools : undefined,
                 options: {
                     temperature: 0.3,
                     num_ctx: 16384,
@@ -33,7 +35,7 @@ export async function ollamaChat(
         }
 
         const data = await response.json() as any;
-        return data.message?.content || "";
+        return data.message;
     }, { maxRetries: 1 });
 }
 
