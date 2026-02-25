@@ -13,6 +13,7 @@ import { withRetry } from "./utils/network.js";
 
 import { bot } from "./telegram-client.js";
 import { sendTelegramPhoto } from "./telegram-utils.js";
+import axios from "axios";
 
 // ─── Whitelist Middleware ────────────────────────────────────────────
 // Security: silently ignore messages from non-whitelisted users
@@ -104,8 +105,11 @@ bot.on("message:voice", async (ctx) => {
         // 1. Download + Transcribe
         const file = await withRetry(() => ctx.getFile(), { maxRetries: 2 });
         const fileUrl = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
-        const response = await withRetry(() => fetch(fileUrl), { maxRetries: 2 });
-        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        const response = await withRetry(
+            () => axios.get(fileUrl, { responseType: "arraybuffer", timeout: 30000 }),
+            { maxRetries: 3, initialDelay: 2000 }
+        );
+        const audioBuffer = Buffer.from(response.data);
         indicator.setAction("typing");
         const transcription = await transcribeVoice(audioBuffer);
 
