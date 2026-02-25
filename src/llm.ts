@@ -28,7 +28,7 @@ const groqClient = new Groq({
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
-        standard: "google/gemini-2.0-flash-lite-preview-02-05:free",
+        standard: "google/gemini-2.5-flash", // Correct ID (OpenRouter usually maps without the :free suffix if free is active or we use the base one)
     },
     groq: {
         standard: "llama-3.3-70b-versatile",
@@ -130,11 +130,14 @@ export async function chat(
 
     // Sanitize messages
     const sanitizedMessages = messages.map(msg => {
-        if (msg.role === 'assistant' && msg.content === null && msg.tool_calls) {
-            const { content, ...rest } = msg as any;
+        // Remove 'timestamp' as Groq/OpenAI reject it
+        const { timestamp, ...msgWithoutTimestamp } = msg as any;
+
+        if (msgWithoutTimestamp.role === 'assistant' && msgWithoutTimestamp.content === null && msgWithoutTimestamp.tool_calls) {
+            const { content, ...rest } = msgWithoutTimestamp;
             return rest as Message;
         }
-        return msg;
+        return msgWithoutTimestamp as Message;
     });
 
     const systemInstruction = tools.length > 0 ? `\n\n[FERRAMENTAS DISPONÍVEIS]\nVocê DEVE usar OBRIGATORIAMENTE o seguinte formato XML para invocar funções:\n<function_calls>\n` +
