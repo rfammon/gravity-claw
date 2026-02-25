@@ -8,7 +8,7 @@ import { ollamaChat } from "./ollama.js";
 
 // ── clients ──────────────────────────────────────────────
 const openRouterClient = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
+    baseURL: config.moltguardGatewayUrl || "https://openrouter.ai/api/v1",
     apiKey: config.openRouterKey,
     defaultHeaders: {
         "HTTP-Referer": "https://github.com/gravity-claw",
@@ -17,11 +17,12 @@ const openRouterClient = new OpenAI({
 });
 
 const modalClient = new OpenAI({
-    baseURL: config.modalBaseUrl,
+    baseURL: config.moltguardGatewayUrl || config.modalBaseUrl,
     apiKey: config.modalApiKey,
 });
 
 const groqClient = new Groq({
+    baseURL: config.moltguardGatewayUrl || undefined,
     apiKey: config.groqApiKey,
 });
 
