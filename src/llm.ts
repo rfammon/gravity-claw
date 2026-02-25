@@ -63,11 +63,14 @@ export async function chat(
 
     // Sanitize messages for Gemini via OpenRouter (null content crashes the request)
     const sanitizedMessages = messages.map(msg => {
-        if (msg.role === 'assistant' && msg.content === null && msg.tool_calls) {
-            const { content, ...rest } = msg as any;
+        // Remove 'timestamp' as OpenRouter Gemini rejects it
+        const { timestamp, ...msgWithoutTimestamp } = msg as any;
+
+        if (msgWithoutTimestamp.role === 'assistant' && msgWithoutTimestamp.content === null && msgWithoutTimestamp.tool_calls) {
+            const { content, ...rest } = msgWithoutTimestamp;
             return rest as Message;
         }
-        return msg;
+        return msgWithoutTimestamp as Message;
     });
 
     const callArgs: any = {
