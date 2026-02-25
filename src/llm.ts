@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import Groq from "groq-sdk";
 import { config } from "./config.js";
 import { getOpenAITools } from "./tools/registry.js";
 import { puterChat } from "./llm-utils.js";
@@ -20,16 +21,23 @@ const modalClient = new OpenAI({
     apiKey: config.modalApiKey,
 });
 
+const groqClient = new Groq({
+    apiKey: config.groqApiKey,
+});
+
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
-    puter: {
-        standard: config.puterDefaultModel || "moonshotai/kimi-k2.5",
+    openRouter: {
+        standard: "google/gemini-2.0-flash-lite-preview-02-05:free",
+    },
+    groq: {
+        standard: "llama-3.3-70b-versatile",
     },
     modal: {
         standard: "zai-org/GLM-5-FP8",
     },
-    openRouter: {
-        standard: "google/gemini-2.0-flash-001",
+    puter: {
+        standard: config.puterDefaultModel || "moonshotai/kimi-k2.5",
     },
     ollama: {
         simple: "qwen2.5:0.5b",
@@ -153,52 +161,9 @@ export async function chat(
     // "Bom dia". This caused an infinite loop of raw JSON responses.
     // All tasks now go through the cloud primary (Puter) or full Ollama fallback.
 
-    // ── PRIMARY: PUTER ─────────────────────────────────────────
+    // ── PRIMARY: OPENROUTER ─────────────────────────────────
     try {
-        console.log(`🤖 Requesting LLM (Primary: Puter [${MODELS.puter.standard}])...`);
-        const text = await withRetry(
-            () => puterChat(messagesWithToolsInstruction as any, MODELS.puter.standard),
-            { maxRetries: 2 }
-        );
-
-        console.log(`✅ LLM Response received from Puter in ${Date.now() - startTime}ms`);
-
-        const parsed = parseTextToToolCalls(text);
-
-        // Mocking OpenAI response structure for compatibility with agent.ts
-        return {
-            choices: [{
-                message: {
-                    role: "assistant",
-                    content: parsed.content,
-                    tool_calls: parsed.tool_calls
-                }
-            }]
-        };
-    } catch (error) {
-        console.warn(`⚠️ Puter failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal...`);
-    }
-
-    // ── FALLBACK 1: MODAL ──────────────────────────────────────
-    try {
-        console.log(`🤖 Requesting LLM (Fallback 1: Modal [${MODELS.modal.standard}])...`);
-        const modalStartTime = Date.now();
-        const response = await withRetry(
-            () => modalClient.chat.completions.create({
-                model: MODELS.modal.standard,
-                ...callArgs
-            }),
-            { maxRetries: 2 }
-        );
-        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
-        return response;
-    } catch (error) {
-        console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenRouter...`);
-    }
-
-    // ── FALLBACK 2: OPENROUTER ─────────────────────────────────
-    try {
-        console.log(`🤖 Requesting LLM (Fallback 2: OpenRouter [${MODELS.openRouter.standard}])...`);
+        console.log(`🤖 Requesting LLM (Primary: OpenRouter [${MODELS.openRouter.standard}])...`);
         const orStartTime = Date.now();
         const response = await withRetry(
             () => openRouterClient.chat.completions.create({
@@ -210,7 +175,41 @@ export async function chat(
         console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - orStartTime}ms`);
         return response;
     } catch (error) {
-        console.warn(`⚠️ OpenRouter failed. Trying Local Ollama as ultimate fallback...`);
+        console.warn(`⚠️ OpenRouter failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
+    }
+
+    // ── FALLBACK 1: GROQ ───────────────────────────────────────
+    try {
+        console.log(`🤖 Requesting LLM (Fallback 1: Groq [${MODELS.groq.standard}])...`);
+        const groqStartTime = Date.now();
+        const response = await withRetry(
+            () => groqClient.chat.completions.create({
+                model: MODELS.groq.standard,
+                ...callArgs
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ LLM Response received from Groq in ${Date.now() - groqStartTime}ms`);
+        return response;
+    } catch (error) {
+        console.warn(`⚠️ Groq failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal...`);
+    }
+
+    // ── FALLBACK 2: MODAL ──────────────────────────────────────
+    try {
+        console.log(`🤖 Requesting LLM (Fallback 2: Modal [${MODELS.modal.standard}])...`);
+        const modalStartTime = Date.now();
+        const response = await withRetry(
+            () => modalClient.chat.completions.create({
+                model: MODELS.modal.standard,
+                ...callArgs
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
+        return response;
+    } catch (error) {
+        console.warn(`⚠️ Modal failed. Trying Local Ollama as ultimate fallback...`);
     }
 
     // ── FALLBACK 3: OLLAMA (Local) ─────────────────────────────
