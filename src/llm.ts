@@ -148,26 +148,10 @@ export async function chat(
         tools: tools.length > 0 ? tools : undefined,
     };
 
-    // ── CHECK FOR SIMPLE TASK (Local Ollama Priority) ──────────
-    const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || "";
-    const isSimpleTask = typeof lastUserMessage === 'string' &&
-        (lastUserMessage.toLowerCase().includes("status report") ||
-            lastUserMessage.length < 20);
-
-    if (isSimpleTask) {
-        try {
-            console.log(`🤖 Requesting LLM (Simple Task: Ollama [${MODELS.ollama.simple}])...`);
-            const messageObj = await withRetry(
-                () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.simple),
-                { maxRetries: 1 }
-            );
-            return {
-                choices: [{ message: messageObj }]
-            };
-        } catch (error) {
-            console.warn(`⚠️ Ollama simple task failed, falling back to cloud stack...`);
-        }
-    }
+    // [NOTE]: Simple task shortcut removed — qwen2.5:0.5b was parroting raw JSON from
+    // conversation history when receiving short messages (< 20 chars) like "Pessoal" or
+    // "Bom dia". This caused an infinite loop of raw JSON responses.
+    // All tasks now go through the cloud primary (Puter) or full Ollama fallback.
 
     // ── PRIMARY: PUTER ─────────────────────────────────────────
     try {

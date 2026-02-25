@@ -31,7 +31,12 @@ export async function runAgent(
 
   // 2. Add system prompt with facts
   const facts = await getFacts(chatId);
-  const semanticFacts = await rag.searchFacts(chatId, userMessage, 5);
+  let semanticFacts: string[] = [];
+  try {
+    semanticFacts = await rag.searchFacts(chatId, userMessage, 5);
+  } catch (err) {
+    console.warn("⚠️ Semantic search unavailable (Ollama offline?). Proceeding without RAG.");
+  }
   const mentalState = await getLatestState(chatId);
 
   const factSummary = [
