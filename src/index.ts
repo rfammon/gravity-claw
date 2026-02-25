@@ -52,9 +52,7 @@ await loadSkills();
 config.allowedUserIds.forEach(id => setupDefaultTasks(String(id)));
 setupGlobalTasks(); // Background agents that run exactly once
 
-// Start heartbeat (Trello sync, etc.)
-import { startHeartbeat } from "./heartbeat.js";
-startHeartbeat();
+// Bot starts below...
 
 // Start the bot
 console.log("🚀 Starting Gravity Claw...");

@@ -44,6 +44,10 @@ export interface IMemoryProvider {
     // ── Mental State ──
     snapshotState(chatId: string, stateData: any, reason?: string): void | Promise<void>;
     getLatestState(chatId: string): any | Promise<any | null>;
+
+    // ── Automation Status ──
+    updateAutomationStatus(taskId: string, status: 'success' | 'failure' | 'running', summary?: string, metadata?: any): void | Promise<void>;
+    getAutomationStatus(): any[] | Promise<any[]>;
 }
 
 
@@ -116,6 +120,8 @@ async function initializeProvider(): Promise<IMemoryProvider> {
             cancelReminder: () => false,
             snapshotState: () => { },
             getLatestState: () => null,
+            updateAutomationStatus: () => { },
+            getAutomationStatus: () => [],
         };
     }
 }
@@ -282,6 +288,14 @@ function createSQLiteProvider(db: any): IMemoryProvider {
 
         getLatestState: (chatId) => {
             return null; // Not implemented for SQLite yet
+        },
+
+        updateAutomationStatus: (taskId, status, summary, metadata) => {
+            console.log(`🤖 Automation [${taskId}] status update: ${status} - ${summary || "no summary"}`);
+        },
+
+        getAutomationStatus: () => {
+            return [];
         }
     };
 }
@@ -334,3 +348,5 @@ export const listReminders = async (...args: Parameters<IMemoryProvider["listRem
 export const cancelReminder = async (...args: Parameters<IMemoryProvider["cancelReminder"]>) => (await getDb()).cancelReminder(...args);
 export const snapshotState = async (...args: Parameters<IMemoryProvider["snapshotState"]>) => (await getDb()).snapshotState(...args);
 export const getLatestState = async (...args: Parameters<IMemoryProvider["getLatestState"]>) => (await getDb()).getLatestState(...args);
+export const updateAutomationStatus = async (...args: Parameters<IMemoryProvider["updateAutomationStatus"]>) => (await getDb()).updateAutomationStatus(...args);
+export const getAutomationStatus = async (...args: Parameters<IMemoryProvider["getAutomationStatus"]>) => (await getDb()).getAutomationStatus();

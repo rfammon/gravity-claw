@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { config } from "../../config.js";
 import { fetchAllSources } from "./fetchers.js";
 import { isUrlProcessed, insertNews } from "./db.js";
+import { rag } from "../../rag-provider.js";
 
 // Lazy initialize clients
 let groq: Groq | null = null;
@@ -121,6 +122,21 @@ export async function runCurationCycle() {
                 content_snippet: post.content_snippet,
                 curated_summary: curationInfo.summary
             });
+
+            // 5. Add to RAG (Factual Memory) - so the agent knows about it instantly
+            try {
+                const factContent = `[LLM Tracker] Nova descoberta: ${post.title}. Sumário: ${curationInfo.summary}. Fonte: ${post.url}`;
+                // Add to first allowed user (usually the primary)
+                const primaryChatId = String(config.allowedUserIds[0] || "global");
+                await rag.addFact(primaryChatId, factContent, {
+                    url: post.url,
+                    source: post.source,
+                    type: "llm_tracker_discovery"
+                });
+                console.log(`🧠 Fact added to RAG for ${primaryChatId}`);
+            } catch (ragErr) {
+                console.warn("⚠️ Failed to add fact to RAG:", ragErr);
+            }
         } else {
             // Save as irrelevant (by saving without reporting or something)
             // Actually, just save it with curated_summary = null and reported = 1 so we don't query it again

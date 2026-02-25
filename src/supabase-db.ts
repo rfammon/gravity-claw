@@ -386,4 +386,35 @@ export class SupabaseMemory {
             return null;
         });
     }
+
+    // ── AUTOMATION STATUS ───────────────────────────────────────────
+
+    async updateAutomationStatus(taskId: string, status: 'success' | 'failure' | 'running', summary?: string, metadata?: any): Promise<void> {
+        await withRetry(async () => {
+            const { error } = await getClient()
+                .from("automation_status")
+                .upsert({
+                    id: taskId,
+                    status,
+                    summary,
+                    metadata: metadata ?? {},
+                    last_run_at: new Date().toISOString(),
+                }, { onConflict: "id" });
+            if (error) throw error;
+        }, { maxRetries: 2 }).catch(err => console.error(`❌ Supabase updateAutomationStatus (${taskId}):`, err.message));
+    }
+
+    async getAutomationStatus(): Promise<any[]> {
+        return await withRetry(async () => {
+            const { data, error } = await getClient()
+                .from("automation_status")
+                .select("*")
+                .order("last_run_at", { ascending: false });
+            if (error) throw error;
+            return data ?? [];
+        }, { maxRetries: 1 }).catch(err => {
+            console.error("❌ Supabase getAutomationStatus:", err.message);
+            return [];
+        });
+    }
 }
