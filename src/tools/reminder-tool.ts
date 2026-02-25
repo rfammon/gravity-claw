@@ -23,30 +23,34 @@ export function registerReminderTools(): void {
         execute: async (input: Record<string, unknown>, ctx?: any) => {
             const { text, remind_at } = input as { text: string; remind_at: string };
             try {
+                console.log(`[reminder-tool] Raw remind_at received: "${remind_at}"`);
+
                 // Parse remind_at
                 let targetDate: Date;
-                const raw = String(remind_at).toLowerCase();
+                const raw = String(remind_at).trim().toLowerCase();
 
                 if (raw.startsWith("+")) {
                     const match = raw.match(/\d+/);
                     if (!match) throw new Error("Quantidade inválida.");
                     const amount = parseInt(match[0]);
-                    const unit = raw.includes("minute") ? 60 * 1000 :
-                        raw.includes("hour") ? 60 * 60 * 1000 :
-                            raw.includes("second") ? 1000 : 0;
+                    const unit = raw.match(/min/i) ? 60 * 1000 :
+                        raw.match(/hour|hora/i) ? 60 * 60 * 1000 :
+                            raw.match(/day|dia/i) ? 24 * 60 * 60 * 1000 :
+                                raw.match(/sec|seg/i) ? 1000 : 0;
                     targetDate = new Date(Date.now() + amount * unit);
                 } else if (raw === "amanhã") {
                     targetDate = new Date();
                     targetDate.setDate(targetDate.getDate() + 1);
                     targetDate.setHours(9, 0, 0, 0);
                 } else {
-                    // Try to handle Sao Paulo local time if no TZ is provided
-                    if (!remind_at.includes("Z") && !remind_at.includes("-") && !remind_at.includes("+")) {
-                        // Append BRT offset (-03:00) assuming standard time
-                        targetDate = new Date(String(remind_at) + " -0300");
-                    } else {
-                        targetDate = new Date(String(remind_at));
+                    // Ensure dates without timezone offset are treated as BRT (-03:00)
+                    const hasTimezoneRegex = /(Z|[+-]\d{2}:?\d{2})$/i;
+                    let dateStr = String(remind_at).trim();
+
+                    if (!hasTimezoneRegex.test(dateStr)) {
+                        dateStr += "-03:00";
                     }
+                    targetDate = new Date(dateStr);
                 }
 
                 if (isNaN(targetDate.getTime())) {
@@ -54,7 +58,7 @@ export function registerReminderTools(): void {
                 }
 
                 if (targetDate <= new Date()) {
-                    throw new Error("O lembrete deve ser para o futuro.");
+                    throw new Error(`O lembrete deve ser para o futuro. Data alvo interpretada: ${targetDate.toISOString()}`);
                 }
 
                 const chatId = String(ctx?.chatId || "unknown");
