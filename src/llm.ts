@@ -58,7 +58,7 @@ function parseTextToToolCalls(text: string): { content: string, tool_calls?: Ope
 
     let callIndex = 0;
 
-    content = text.replace(functionCallsRegex, (substring, innerBlocks) => {
+    content = content.replace(functionCallsRegex, (substring, innerBlocks) => {
         let invokeMatch;
         while ((invokeMatch = invokeRegex.exec(innerBlocks)) !== null) {
             const name = invokeMatch[1];
@@ -81,6 +81,32 @@ function parseTextToToolCalls(text: string): { content: string, tool_calls?: Ope
         }
         return ""; // Remove from text
     });
+
+    // Support Moonshot "kimi" custom tool syntax
+    // <|toolcallbegin|> functions.getcurrenttime:1 <|toolcallargumentbegin|> {"timezone": "America/SaoPaulo"} <|toolcallend|>
+    const moonshotRegex = /<\|toolcallbegin\|>\s*(?:functions\.)?([a-zA-Z0-9_\-]+)(?::\d+)?\s*<\|toolcallargumentbegin\|>\s*({[\s\S]*?})\s*<\|toolcallend\|>/gi;
+
+    content = content.replace(moonshotRegex, (substring, name, argsJson) => {
+        try {
+            // Validate it's parseable JSON
+            JSON.parse(argsJson);
+            tool_calls.push({
+                id: `call_${Date.now()}_${callIndex++}`,
+                type: "function",
+                function: {
+                    name: name.trim(),
+                    arguments: argsJson.trim()
+                }
+            });
+        } catch (e) {
+            console.warn("Failed to parse moonshot tool arguments:", argsJson);
+        }
+        return ""; // Remove from output text
+    });
+
+    // Remove the section wrappers if they exist
+    content = content.replace(/<\|toolcallssectionbegin\|>/g, "");
+    content = content.replace(/<\|toolcallssectionend\|>/g, "");
 
     return {
         content: content.trim(),
