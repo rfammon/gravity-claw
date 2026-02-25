@@ -31,8 +31,8 @@ export class RAGProvider {
         try {
             embedding = await this.generateEmbedding(content);
         } catch (error) {
-            console.warn("⚠️ RAG AddFact aborted: Embedding generation failed.");
-            return;
+            console.warn("⚠️ RAG AddFact aborted: Embedding generation failed.", error);
+            throw new Error(`Failed to generate embeddings: ${error}`);
         }
 
         await withRetry(async () => {
@@ -56,8 +56,8 @@ export class RAGProvider {
         try {
             embedding = await this.generateEmbedding(query);
         } catch (error) {
-            console.warn("⚠️ RAG Search aborted: Embedding generation failed.");
-            return [];
+            console.warn("⚠️ RAG Search aborted: Embedding generation failed.", error);
+            throw new Error(`Failed to generate embeddings: ${error}`);
         }
 
         return await withRetry(async () => {
