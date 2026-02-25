@@ -38,6 +38,8 @@ export interface IMemoryProvider {
     addReminder(chatId: string, userId: number, text: string, remindAt: Date, metadata?: any): void | Promise<void>;
     getPendingReminders(): any[] | Promise<any[]>;
     updateReminderStatus(id: string, status: 'completed' | 'failed' | 'cancelled'): void | Promise<void>;
+    listReminders(chatId: string): any[] | Promise<any[]>;
+    cancelReminder(chatId: string, reminderId: number): boolean | Promise<boolean>;
 
     // ── Mental State ──
     snapshotState(chatId: string, stateData: any, reason?: string): void | Promise<void>;
@@ -116,6 +118,8 @@ async function initializeProvider(): Promise<IMemoryProvider> {
             addReminder: () => { },
             getPendingReminders: () => [],
             updateReminderStatus: () => { },
+            listReminders: () => [],
+            cancelReminder: () => false,
             snapshotState: () => { },
             getLatestState: () => null,
         };
@@ -266,6 +270,17 @@ function createSQLiteProvider(db: any): IMemoryProvider {
             stmt.run(status, id);
         },
 
+        listReminders: (chatId) => {
+            const stmt = db.prepare("SELECT * FROM reminders WHERE chat_id = ? AND status = 'pending' ORDER BY remind_at ASC");
+            return stmt.all(chatId) as any[];
+        },
+
+        cancelReminder: (chatId, id) => {
+            const stmt = db.prepare("UPDATE reminders SET status = 'cancelled' WHERE id = ? AND chat_id = ?");
+            const info = stmt.run(id, chatId);
+            return info.changes > 0;
+        },
+
         snapshotState: (chatId, stateData, reason) => {
             // Not implemented for SQLite yet, but needs the method to satisfy interface
             console.warn("⚠️ Mental State snapshots not fully implemented for SQLite yet.");
@@ -321,5 +336,7 @@ export const getJudgmentsSince = async (...args: Parameters<IMemoryProvider["get
 export const addReminder = async (...args: Parameters<IMemoryProvider["addReminder"]>) => (await getDb()).addReminder(...args);
 export const getPendingReminders = async (...args: Parameters<IMemoryProvider["getPendingReminders"]>) => (await getDb()).getPendingReminders(...args);
 export const updateReminderStatus = async (...args: Parameters<IMemoryProvider["updateReminderStatus"]>) => (await getDb()).updateReminderStatus(...args);
+export const listReminders = async (...args: Parameters<IMemoryProvider["listReminders"]>) => (await getDb()).listReminders(...args);
+export const cancelReminder = async (...args: Parameters<IMemoryProvider["cancelReminder"]>) => (await getDb()).cancelReminder(...args);
 export const snapshotState = async (...args: Parameters<IMemoryProvider["snapshotState"]>) => (await getDb()).snapshotState(...args);
 export const getLatestState = async (...args: Parameters<IMemoryProvider["getLatestState"]>) => (await getDb()).getLatestState(...args);

@@ -1,20 +1,21 @@
 import { registerTool } from "./registry.js";
 import { createReminder } from "../reminders.js";
+import { listReminders, cancelReminder } from "../db-provider.js";
 
 export function registerReminderTools(): void {
     registerTool({
         name: "create_reminder",
-        description: "Agende um lembrete para um momento específico no futuro. Use para tarefas, compromissos ou lembretes rápidos.",
+        description: "Agende um lembrete para um momento específico no futuro. Use para tarefas, compromissos ou lembretes.",
         parameters: {
             type: "object",
             properties: {
                 text: {
                     type: "string",
-                    description: "O texto do lembrete (ex: 'Beber água')"
+                    description: "O texto/mensagem do lembrete (ex: 'Beber água')"
                 },
                 remind_at: {
                     type: "string",
-                    description: "Data/Hora em formato ISO ou string amigável (ex: '2026-02-21T18:00:00Z', ou '+5 minutes', '+1 hour', 'amanhã 08:00')"
+                    description: "AÇÃO OBRIGATÓRIA: Para tempos relativos (daqui a X min/horas/dias), VOCÊ DEVE usar OBRIGATORIAMENTE o formato relativo: '+5 minutes', '+2 hours', '+1 day'. Para tempos fixos, use ISO COM FUSO HORÁRIO BRT: '2026-12-31T15:30:00-03:00'. NUNCA use 'Z' no final se estiver usando horário de Brasília!"
                 }
             },
             required: ["text", "remind_at"]
@@ -75,5 +76,65 @@ export function registerReminderTools(): void {
         }
     });
 
-    console.log("🔧 Registered Reminder tool: create_reminder");
+    registerTool({
+        name: "list_reminders",
+        description: "Lista todos os seus lembretes pendentes agendados para o futuro. O retorno inclui o ID numérico necessário para cancelar o lembrete.",
+        parameters: { type: "object", properties: {} },
+        execute: async (_input: Record<string, unknown>, ctx?: any) => {
+            const chatId = String(ctx?.chatId || "unknown");
+            try {
+                const reminders = await listReminders(chatId);
+                if (reminders.length === 0) {
+                    return JSON.stringify({ success: true, message: "Você não tem nenhum lembrete pendente no momento." });
+                }
+
+                const formatted = reminders.map(r =>
+                    `[ID: ${r.id}] ${new Date(r.remind_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} - "${r.reminder_text}"`
+                ).join("\\n");
+
+                return JSON.stringify({
+                    success: true,
+                    reminders: formatted
+                });
+            } catch (err) {
+                console.error("❌ list_reminders tool error:", err);
+                return JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) });
+            }
+        }
+    });
+
+    registerTool({
+        name: "cancel_reminder",
+        description: "Cancela (deleta) um lembrete existente. Use a ferramenta list_reminders para descobrir o ID do lembrete, se não souber.",
+        parameters: {
+            type: "object",
+            properties: {
+                id: {
+                    type: "number",
+                    description: "O ID numérico do lembrete a ser cancelado"
+                }
+            },
+            required: ["id"]
+        },
+        execute: async (input: Record<string, unknown>, ctx?: any) => {
+            const id = Number(input.id);
+            const chatId = String(ctx?.chatId || "unknown");
+
+            if (isNaN(id)) return JSON.stringify({ success: false, error: "ID inválido introduzido." });
+
+            try {
+                const success = await cancelReminder(chatId, id);
+                if (success) {
+                    return JSON.stringify({ success: true, message: `Lembrete (ID: ${id}) foi cancelado com sucesso.` });
+                } else {
+                    return JSON.stringify({ success: false, error: `Lembrete não encontrado (ID: ${id}) ou já concluído.` });
+                }
+            } catch (err) {
+                console.error("❌ cancel_reminder tool error:", err);
+                return JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) });
+            }
+        }
+    });
+
+    console.log("🔧 Registered Reminder tools: create_reminder, list_reminders, cancel_reminder");
 }

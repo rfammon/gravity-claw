@@ -314,6 +314,37 @@ export class SupabaseMemory {
         }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase updateReminderStatus:", err.message));
     }
 
+    async listReminders(chatId: string): Promise<any[]> {
+        return await withRetry(async () => {
+            const { data, error } = await getClient()
+                .from("reminders")
+                .select("*")
+                .eq("chat_id", chatId)
+                .eq("status", "pending")
+                .order("remind_at", { ascending: true });
+            if (error) throw error;
+            return data ?? [];
+        }, { maxRetries: 2 }).catch(err => {
+            console.error("❌ Supabase listReminders:", err.message);
+            return [];
+        });
+    }
+
+    async cancelReminder(chatId: string, reminderId: number): Promise<boolean> {
+        return await withRetry(async () => {
+            const { error } = await getClient()
+                .from("reminders")
+                .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+                .eq("id", reminderId)
+                .eq("chat_id", chatId);
+            if (error) throw error;
+            return true;
+        }, { maxRetries: 2 }).catch(err => {
+            console.error("❌ Supabase cancelReminder:", err.message);
+            return false;
+        });
+    }
+
     // ── MENTAL STATE VERSIONING ──────────────────────────────
 
     async snapshotState(chatId: string, stateData: any, reason?: string): Promise<void> {
