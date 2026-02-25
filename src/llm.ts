@@ -84,7 +84,7 @@ function parseTextToToolCalls(text: string): { content: string, tool_calls?: Ope
 
     // Support Moonshot "kimi" custom tool syntax
     // <|toolcallbegin|> functions.getcurrenttime:1 <|toolcallargumentbegin|> {"timezone": "America/SaoPaulo"} <|toolcallend|>
-    const moonshotRegex = /<\|toolcallbegin\|>\s*(?:functions\.)?([a-zA-Z0-9_\-]+)(?::\d+)?\s*<\|toolcallargumentbegin\|>\s*({[\s\S]*?})\s*<\|toolcallend\|>/gi;
+    const moonshotRegex = /<\|\s*tool_?call_?begin\s*\|>\s*(?:functions\.)?([a-zA-Z0-9_\-]+)(?::\d+)?\s*(?:<\|\s*tool_?call_?argument_?begin\s*\|>)?\s*({[\s\S]*?})\s*<\|\s*tool_?call_?end\s*\|>/gi;
 
     content = content.replace(moonshotRegex, (substring, name, argsJson) => {
         try {
@@ -105,8 +105,8 @@ function parseTextToToolCalls(text: string): { content: string, tool_calls?: Ope
     });
 
     // Remove the section wrappers if they exist
-    content = content.replace(/<\|toolcallssectionbegin\|>/g, "");
-    content = content.replace(/<\|toolcallssectionend\|>/g, "");
+    content = content.replace(/<\|\s*tool_?calls_?section_?begin\s*\|>/gi, "");
+    content = content.replace(/<\|\s*tool_?calls_?section_?end\s*\|>/gi, "");
 
     return {
         content: content.trim(),
