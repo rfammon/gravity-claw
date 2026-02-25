@@ -9,6 +9,24 @@ import { validateToolArgs } from "./utils/validation.js";
 
 const MAX_ITERATIONS = 10;
 
+// ── Patterns that indicate a short confirmation reply — skip RAG search ──
+const RAG_SKIP_PATTERN = /^(ok|sim|não|nao|obrigado|valeu|entendi|certo|legal|show|beleza|blz|tudo bem|bom dia|boa tarde|boa noite|oi|olá|ola|opa|e aí|e a|claro|perfeito|s|n|ok!|sim!|combinado|perfeito!|maravilha|exato|exatamente)[\.!\?]?$/i;
+
+// ── Read-only tools that are safe to run in parallel ──────────────────
+const READ_ONLY_TOOLS = new Set([
+  "get_current_time", "web_search", "browse_web", "search_core_memory",
+  "trello_list_tasks", "supabase_query", "list_reminders", "finance_get_summary"
+]);
+
+// ── Critic Pass cache: (toolName+argsHash) -> approval, expires in 60s ─
+const criticCache = new Map<string, { approved: boolean; expiresAt: number }>();
+function hashArgs(args: any): string {
+  const str = JSON.stringify(args);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) { hash = (hash * 31 + str.charCodeAt(i)) >>> 0; }
+  return hash.toString(36);
+}
+
 export interface AgentResult {
   text: string;
   media: {
@@ -23,21 +41,22 @@ export async function runAgent(
   userMessage: string,
   userId?: number
 ): Promise<AgentResult> {
-  // 0. Track behavior patterns for proactive recommendations
   analyzeMessageForPatterns(chatId, userMessage);
 
-  // 1. Get history from DB (limit to last 15 messages to save tokens and maintain concise context)
-  const history = (await getChatHistory(chatId, 15)) as Message[];
-
-  // 2. Add system prompt with facts
+  const history = (await getChatHistory(chatId, 12)) as Message[];
   const facts = await getFacts(chatId);
-  let semanticFacts: string[] = [];
-  try {
-    semanticFacts = await rag.searchFacts(chatId, userMessage, 5);
-  } catch (err) {
-    console.warn("⚠️ Semantic search unavailable (Ollama offline?). Proceeding without RAG.");
-  }
   const mentalState = await getLatestState(chatId);
+
+  // Skip RAG for short confirmation replies to reduce latency
+  let semanticFacts: string[] = [];
+  const isConfirmation = RAG_SKIP_PATTERN.test(userMessage.trim());
+  if (!isConfirmation) {
+    try {
+      semanticFacts = await rag.searchFacts(chatId, userMessage, 5);
+    } catch (err) {
+      console.warn("⚠️ Semantic search unavailable (Ollama offline?). Proceeding without RAG.");
+    }
+  }
 
   const factSummary = [
     ...Object.entries(facts).map(([k, v]) => `${k}: ${v}`),
@@ -124,112 +143,101 @@ FORMATTING:
       const finalResponse = assistantMessage.content && assistantMessage.content.trim()
         ? assistantMessage.content
         : "✅ Operação finalizada.";
-      // Save memory to DB (SQLite or Supabase)
       await saveMessage(chatId, "user", userMessage);
       await saveMessage(chatId, "assistant", finalResponse);
-
-      // 3. Update Mental State (Versioning)
-      // We'll use a lightweight approach: ask the agent to summarize its state if it changed.
-      // For now, let's just snapshot the current context's "understanding" if the response was long.
       if (finalResponse.length > 200) {
         await snapshotState(chatId, {
           last_interaction: new Date().toISOString(),
           summary: finalResponse.substring(0, 100) + "..."
         }, "Automatic interaction snapshot");
       }
-
       return { text: finalResponse, media: accumulatedMedia };
     }
 
-    for (const toolCall of toolCalls) {
-      const fnName = toolCall.function.name;
-      const fnArgs = JSON.parse(toolCall.function.arguments || "{}");
-      const tool = getTool(fnName);
+    // ── Split into read-only (parallel) vs mutative (sequential) ────────
+    const readOnlyCalls = toolCalls.filter((tc: ChatCompletionMessageFunctionToolCall) => READ_ONLY_TOOLS.has(tc.function.name));
+    const mutativeCalls = toolCalls.filter((tc: ChatCompletionMessageFunctionToolCall) => !READ_ONLY_TOOLS.has(tc.function.name));
+    const orderedCalls = [...readOnlyCalls, ...mutativeCalls];
 
-      // ── CRITIC PASS (Self-Review for Sensitivity) ──────────
-      const SENSITIVE_TOOLS = ["trello", "supabase_query", "delete_reminder"];
-      if (SENSITIVE_TOOLS.includes(fnName)) {
-        console.log(`🔍 critic: Reviewing high-stakes tool call "${fnName}"...`);
-        const criticPrompt = `You are a strict REASONING CRITIC. 
-Review the following proposed tool call for accuracy and safety.
-TOOL: ${fnName}
-ARGS: ${JSON.stringify(fnArgs, null, 2)}
-
-If the tool call is perfect and safe, respond with "APPROVED".
-If you see any hallucination, error, or safety risk, respond with a correction or "REJECTED: [reason]".`;
-
-        try {
-          const reviewResponse = await chat([
-            ...messages,
-            { role: "system", content: criticPrompt }
-          ]);
-          const reviewText = reviewResponse.choices[0].message.content || "";
-          if (!reviewText.toUpperCase().includes("APPROVED")) {
-            console.warn(`🛑 critic rejected tool call: ${reviewText}`);
-            const resultText = JSON.stringify({
-              error: "CRITIC_REJECTION",
-              message: `The reasoning critic rejected this tool call: ${reviewText}. Please rethink your approach.`
-            });
-            // Skip execution and add to history
-            messages.push({
-              role: "assistant",
-              content: null,
-              tool_calls: [toolCall]
-            });
-            messages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: resultText
-            });
-            continue;
-          }
-        } catch (e) {
-          console.warn("⚠️ Critic pass failed, proceeding with caution...");
-        }
-      }
-
-      let resultText: string;
-      if (!tool) {
-        resultText = JSON.stringify({ error: "Unknown tool: " + fnName });
-      } else {
-        // Strict Validation Pass
-        const validation = validateToolArgs(tool.parameters, fnArgs);
-        if (!validation.valid) {
-          console.warn(`🛑 Hallucination detected in tool call "${fnName}": ${validation.error}`);
-          resultText = JSON.stringify({
-            error: "HALUCINATION_PREVENTION_TRIGGERED",
-            message: `Your tool call for "${fnName}" was invalid: ${validation.error}. Please correct the parameters and try again.`,
-            accepted_parameters: tool.parameters
-          });
-        } else {
-          try {
-            const ctx = { chatId, userId };
-            const rawResult = await tool.execute(fnArgs, ctx);
-            if (typeof rawResult === 'string') {
-              resultText = rawResult;
-            } else {
-              resultText = rawResult.text;
-              if (rawResult.media) {
-                accumulatedMedia.push(...rawResult.media);
-              }
-            }
-          } catch (err) {
-            resultText = JSON.stringify({
-              error: "Tool threw: " + (err instanceof Error ? err.message : String(err)),
-            });
-          }
-        }
-      }
-
-      messages.push({
-        role: "tool" as const,
-        tool_call_id: toolCall.id,
-        content: resultText,
+    // Execute read-only tools in parallel, then run mutative ones sequentially after
+    const resultsMap = new Map<string, string>();
+    if (readOnlyCalls.length > 0) {
+      const parallelResults = await Promise.allSettled(
+        readOnlyCalls.map((tc: ChatCompletionMessageFunctionToolCall) => executeToolCall(tc, chatId, userId, accumulatedMedia, messages))
+      );
+      parallelResults.forEach((r, i) => {
+        resultsMap.set(readOnlyCalls[i].id, r.status === "fulfilled" ? r.value : JSON.stringify({ error: String((r as any).reason) }));
       });
+    }
+    for (const tc of mutativeCalls) {
+      resultsMap.set(tc.id, await executeToolCall(tc, chatId, userId, accumulatedMedia, messages));
+    }
+
+    // Reconstruct assistant message + tool results for history
+    messages.push({ role: "assistant", content: null, tool_calls: toolCalls } as any);
+    for (const tc of orderedCalls) {
+      messages.push({ role: "tool" as const, tool_call_id: tc.id, content: resultsMap.get(tc.id) ?? "" });
     }
   }
 
-  const lastContent = messages[messages.length - 1]?.content;
-  const finalText = lastContent && typeof lastContent === 'string' && lastContent.trim() ? lastContent : "⚠️ Operação finalizada.";
-  return { text: finalText, media: accumulatedMedia };
+  return { text: "⚠️ Limite máximo de iterações atingido.", media: accumulatedMedia };
 }
+
+// ── Tool execution helper ─────────────────────────────────────────────
+async function executeToolCall(
+  toolCall: ChatCompletionMessageFunctionToolCall,
+  chatId: string,
+  userId: number | undefined,
+  accumulatedMedia: AgentResult["media"],
+  _messages: Message[]
+): Promise<string> {
+  const fnName = toolCall.function.name;
+  const fnArgs = (() => { try { return JSON.parse(toolCall.function.arguments || "{}"); } catch { return {}; } })();
+  const tool = getTool(fnName);
+
+  // ── CRITIC PASS with 60s cache ────────────────────────────────────
+  const SENSITIVE_TOOLS = new Set(["trello_create_card", "trello_update_card", "trello_delete_card", "supabase_insert", "delete_reminder"]);
+  if (SENSITIVE_TOOLS.has(fnName)) {
+    const cacheKey = `${fnName}:${hashArgs(fnArgs)}`;
+    const cached = criticCache.get(cacheKey);
+    const now = Date.now();
+
+    if (!cached || cached.expiresAt < now) {
+      console.log(`🔍 critic: Reviewing "${fnName}"...`);
+      try {
+        const criticPrompt = `CRITIC: Review this tool call. Respond ONLY "APPROVED" or "REJECTED: [reason]".\nTOOL: ${fnName}\nARGS: ${JSON.stringify(fnArgs)}`;
+        const reviewResponse = await chat([{ role: "user", content: criticPrompt }]);
+        const reviewText = reviewResponse.choices[0].message.content || "";
+        const approved = reviewText.toUpperCase().includes("APPROVED");
+        criticCache.set(cacheKey, { approved, expiresAt: now + 60_000 });
+        if (!approved) {
+          console.warn(`🛑 critic rejected: ${reviewText}`);
+          return JSON.stringify({ error: "CRITIC_REJECTION", message: reviewText });
+        }
+      } catch {
+        console.warn("⚠️ Critic pass failed, proceeding...");
+      }
+    } else if (!cached.approved) {
+      return JSON.stringify({ error: "CRITIC_REJECTION", message: "Previously rejected (cached)." });
+    }
+  }
+
+  if (!tool) return JSON.stringify({ error: "Unknown tool: " + fnName });
+
+  const validation = validateToolArgs(tool.parameters, fnArgs);
+  if (!validation.valid) {
+    console.warn(`🛑 Hallucination in "${fnName}": ${validation.error}`);
+    return JSON.stringify({ error: "INVALID_ARGS", message: validation.error, accepted_parameters: tool.parameters });
+  }
+
+  try {
+    const ctx = { chatId, userId };
+    const rawResult = await tool.execute(fnArgs, ctx);
+    if (typeof rawResult === "string") return rawResult;
+    if (rawResult.media) accumulatedMedia.push(...rawResult.media);
+    return rawResult.text;
+  } catch (err) {
+    return JSON.stringify({ error: "Tool threw: " + (err instanceof Error ? err.message : String(err)) });
+  }
+}
+

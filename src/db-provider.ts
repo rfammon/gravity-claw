@@ -46,15 +46,9 @@ export interface IMemoryProvider {
     getLatestState(chatId: string): any | Promise<any | null>;
 }
 
-// ── Debug: Log Supabase config ───────────────────────────────────────
-console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-console.log("🔍 Database Provider Debug");
-console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-console.log(`   SUPABASE_URL: ${config.supabaseUrl ? `✅ Set (${config.supabaseUrl.substring(0, 30)}...)` : "❌ Not set"}`);
-console.log(`   SUPABASE_SERVICE_KEY: ${config.supabaseServiceKey ? `✅ Set (${config.supabaseServiceKey.substring(0, 20)}...)` : "❌ Not set"}`);
-console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // ── Provider Selection ───────────────────────────────────────────────
+
 let _db: IMemoryProvider;
 let _backend: "supabase" | "sqlite" | "pending" = "pending";
 

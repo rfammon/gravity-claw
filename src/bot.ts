@@ -51,210 +51,129 @@ bot.command("think", async (ctx) => {
     }
 });
 
+// ─── Shared Response Sender ─────────────────────────────────────────
+/** Sends the agent result (text + media) to the user via Telegram. */
+async function sendAgentResult(ctx: any, chatId: string, result: { text: string; media?: any[] }): Promise<void> {
+    const chunks = splitMessage(result.text, 4096);
+    for (const chunk of chunks) {
+        const sent = await withRetry(
+            () => ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk)),
+            { maxRetries: 2 }
+        ).catch(() => null);
+        if (sent && (sent as any).message_id) {
+            trackBotMessage(chatId, (sent as any).message_id, chunk);
+        }
+    }
+    if (result.media && result.media.length > 0) {
+        for (const media of result.media) {
+            if (media.type === "image") {
+                await sendTelegramPhoto(chatId, media.buffer, media.caption);
+            }
+        }
+    }
+}
+
 // ─── Text Message Handler ────────────────────────────────────────────
 bot.on("message:text", async (ctx) => {
-    const chatId = ctx.chat.id;
+    const chatId = String(ctx.chat.id);
     const text = ctx.message.text;
-
-    console.log(`📩 [${chatId}] ${text}`);
+    console.log(`📩 [${chatId}] ${text.substring(0, 80)}`);
 
     const typing = new TypingIndicator(ctx, "typing");
     await typing.start();
-
     try {
-        const result = await runAgent(String(chatId), text, ctx.from?.id);
+        const result = await runAgent(chatId, text, ctx.from?.id);
         typing.stop();
-
-        // Send Text
-        if (result.text.length <= 4096) {
-            const sent = await withRetry(
-                () => ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(result.text)),
-                { maxRetries: 2 }
-            );
-            if (sent) trackBotMessage(String(chatId), sent.message_id, result.text);
-        } else {
-            const chunks = splitMessage(result.text, 4096);
-            for (const chunk of chunks) {
-                const sent = await withRetry(
-                    () => ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk)),
-                    { maxRetries: 2 }
-                );
-                if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
-            }
-        }
-
-        // Send Media (e.g. Canvas Screenshots)
-        if (result.media && result.media.length > 0) {
-            for (const media of result.media) {
-                if (media.type === "image") {
-                    await sendTelegramPhoto(String(chatId), media.buffer, media.caption);
-                }
-            }
-        }
-
+        await sendAgentResult(ctx, chatId, result);
         console.log(`✅ [${chatId}] Responded (${result.text.length} chars, ${result.media?.length || 0} media)`);
     } catch (error) {
         typing.stop();
         console.error(`❌ [${chatId}] Error:`, error);
-        await ctx.reply("Something went wrong. Please try again.");
+        await ctx.reply("Algo deu errado. Por favor, tente novamente.");
     }
 });
 
 // ─── Voice Message Handler ───────────────────────────────────────────
 bot.on("message:voice", async (ctx) => {
-    const chatId = ctx.chat.id;
-
+    const chatId = String(ctx.chat.id);
     console.log(`🎤 [${chatId}] Voice message received (${ctx.message.voice.duration}s)`);
 
     const indicator = new TypingIndicator(ctx, "record_voice");
     await indicator.start();
-
     try {
-        // 1. Download voice file from Telegram
+        // 1. Download + Transcribe
         const file = await withRetry(() => ctx.getFile(), { maxRetries: 2 });
         const fileUrl = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
         const response = await withRetry(() => fetch(fileUrl), { maxRetries: 2 });
         const audioBuffer = Buffer.from(await response.arrayBuffer());
-
-        console.log(`📥 [${chatId}] Downloaded ${audioBuffer.length} bytes`);
-
-        // 2. Transcribe voice → text
         indicator.setAction("typing");
         const transcription = await transcribeVoice(audioBuffer);
 
         if (!transcription.trim()) {
             indicator.stop();
-            await ctx.reply("🤔 I couldn't understand the voice message. Could you try again?");
+            await ctx.reply("🤔 Não consegui entender a mensagem de voz. Pode tentar novamente?");
             return;
         }
 
-        // 3. Process through agent
-        const agentMessage = `[🎙️ Mensagem de Voz] ${transcription}`;
-        const agentResult = await runAgent(String(chatId), agentMessage, ctx.from?.id);
+        // 2. Run agent
+        const agentResult = await runAgent(chatId, `[🎙️ Mensagem de Voz] ${transcription}`, ctx.from?.id);
 
-        // 4. Generate voice response from the text part
+        // 3. Send TTS voice response (non-blocking failure)
         indicator.setAction("record_voice");
         try {
             const speechBuffer = await synthesizeSpeech(agentResult.text);
-
-            // 5. Send voice response
             indicator.stop();
-            await withRetry(
-                () => ctx.replyWithVoice(new InputFile(speechBuffer, "response.mp3")),
-                { maxRetries: 2 }
-            );
+            await withRetry(() => ctx.replyWithVoice(new InputFile(speechBuffer, "response.mp3")), { maxRetries: 2 });
         } catch (ttsError) {
             indicator.stop();
             console.warn("⚠️ TTS failed:", ttsError);
         }
 
-        // 6. Send the text response alongside the voice (or as fallback)
-        if (agentResult.text.length <= 4096) {
-            const sent = await withRetry(
-                () => ctx.reply(agentResult.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(agentResult.text)),
-                { maxRetries: 2 }
-            );
-            if (sent) trackBotMessage(String(chatId), sent.message_id, agentResult.text);
-        } else {
-            const chunks = splitMessage(agentResult.text, 4096);
-            for (const chunk of chunks) {
-                const sent = await withRetry(
-                    () => ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk)),
-                    { maxRetries: 2 }
-                );
-                if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
-            }
-        }
-
-        // 7. Send Media (e.g. Canvas Screenshots)
-        if (agentResult.media && agentResult.media.length > 0) {
-            for (const media of agentResult.media) {
-                if (media.type === "image") {
-                    await sendTelegramPhoto(String(chatId), media.buffer, media.caption);
-                }
-            }
-        }
-
+        // 4. Send text + media
+        await sendAgentResult(ctx, chatId, agentResult);
         console.log(`✅ [${chatId}] Voice + text response sent`);
     } catch (error: any) {
         indicator.stop();
         console.error("❌ Voice process error:", error);
-        if (error.message?.includes("invalid_api_key") || error.message?.includes("API key")) {
-            await ctx.reply("❌ Erro nas chaves de API. Por favor, verifique se a `GROQ_API_KEY` no arquivo `.env` é válida.");
-        } else {
-            await ctx.reply("❌ Ocorreu um erro ao processar sua mensagem de voz. Por favor, tente novamente mais tarde.");
-        }
+        await ctx.reply("❌ Ocorreu um erro ao processar sua mensagem de voz. Por favor, tente novamente mais tarde.");
     }
 });
 
 // ─── Photo Message Handler (OCR / Vision) ────────────────────────────
 bot.on("message:photo", async (ctx) => {
-    const chatId = ctx.chat.id;
+    const chatId = String(ctx.chat.id);
     const caption = ctx.message.caption || "";
-
-    console.log(`📷 [${chatId}] Photo received${caption ? ` (caption: "${caption.substring(0, 50)}...")` : ""}`);
+    console.log(`📷 [${chatId}] Photo received`);
 
     const indicator = new TypingIndicator(ctx, "typing");
     await indicator.start();
-
     try {
         // 1. Download highest resolution photo
         const photos = ctx.message.photo;
-        const bestPhoto = photos[photos.length - 1]; // Last = highest res
+        const bestPhoto = photos[photos.length - 1];
         const file = await withRetry(() => ctx.api.getFile(bestPhoto.file_id), { maxRetries: 2 });
         const fileUrl = `https://api.telegram.org/file/bot${config.telegramToken}/${file.file_path}`;
         const imgResponse = await withRetry(() => fetch(fileUrl), { maxRetries: 2 });
         const imageBuffer = Buffer.from(await imgResponse.arrayBuffer());
 
-        console.log(`📥 [${chatId}] Downloaded ${(imageBuffer.length / 1024).toFixed(0)}KB image`);
-
-        // 2. Run OCR
+        // 2. Run OCR + Build agent message
         const ocr = await extractTextFromImage(imageBuffer);
-
-        // 3. Build agent message
         let agentMessage: string;
         if (ocr.text) {
             agentMessage = caption
-                ? `[📷 O usuário enviou uma foto com legenda: "${caption}". Texto extraído via OCR (${ocr.engine}): "${ocr.text}"]\n\nAnalise o texto extraído e responda considerando a legenda.`
-                : `[📷 O usuário enviou uma foto. Texto extraído via OCR (${ocr.engine}): "${ocr.text}"]\n\nAnalise o texto extraído e responda de forma útil.`;
+                ? `[📷 Foto com legenda: "${caption}". OCR (${ocr.engine}): "${ocr.text}"]\n\nAnalise o texto e responda considerando a legenda.`
+                : `[📷 Foto recebida. OCR (${ocr.engine}): "${ocr.text}"]\n\nAnalise o texto e responda de forma útil.`;
         } else {
             agentMessage = caption
-                ? `[📷 O usuário enviou uma foto com legenda: "${caption}". Nenhum texto foi detectado na imagem pelo OCR.]\n\nResponda com base na legenda do usuário.`
-                : `[📷 O usuário enviou uma foto, mas nenhum texto foi detectado pelo OCR. Informe que não foi possível extrair texto e pergunte o que ele precisa.]`;
+                ? `[📷 Foto com legenda: "${caption}". OCR não detectou texto.]\n\nResponda com base na legenda.`
+                : `[📷 Foto sem texto detectável pelo OCR. Pergunte ao usuário o que ele precisa.]`;
         }
 
-        // 4. Process through agent
-        const result = await runAgent(String(chatId), agentMessage, ctx.from?.id);
-
-        // 5. Send response text
+        // 3. Process + Send
+        const result = await runAgent(chatId, agentMessage, ctx.from?.id);
         indicator.stop();
-        if (result.text.length <= 4096) {
-            const sent = await withRetry(
-                () => ctx.reply(result.text, { parse_mode: "Markdown" }).catch(() => ctx.reply(result.text)),
-                { maxRetries: 2 }
-            );
-            if (sent) trackBotMessage(String(chatId), sent.message_id, result.text);
-        } else {
-            const chunks = splitMessage(result.text, 4096);
-            for (const chunk of chunks) {
-                const sent = await withRetry(
-                    () => ctx.reply(chunk, { parse_mode: "Markdown" }).catch(() => ctx.reply(chunk)),
-                    { maxRetries: 2 }
-                );
-                if (sent) trackBotMessage(String(chatId), sent.message_id, chunk);
-            }
-        }
-
-        // 6. Send Media (e.g. Canvas Screenshots)
-        if (result.media && result.media.length > 0) {
-            for (const media of result.media) {
-                if (media.type === "image") {
-                    await sendTelegramPhoto(String(chatId), media.buffer, media.caption);
-                }
-            }
-        }
-
-        console.log(`✅ [${chatId}] Photo processed: ${ocr.text.length} chars extracted (${ocr.engine}), response ${result.text.length} chars, ${result.media?.length || 0} media`);
+        await sendAgentResult(ctx, chatId, result);
+        console.log(`✅ [${chatId}] Photo processed: OCR="${ocr.engine}", response=${result.text.length} chars`);
     } catch (error) {
         indicator.stop();
         console.error(`❌ [${chatId}] Photo error:`, error);
@@ -278,6 +197,7 @@ bot.on("message_reaction", async (ctx) => {
     try {
         const reaction = ctx.messageReaction;
         const chatId = String(reaction.chat.id);
+
         const messageId = reaction.message_id;
         const newReactions = reaction.new_reaction;
 
