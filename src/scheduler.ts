@@ -80,14 +80,14 @@ export const scheduler = new Scheduler();
 export function setupDefaultTasks(chatId: string) {
     // Morning Briefing (8 AM)
     scheduler.schedule(`${chatId}_morning`, "0 8 * * *", async () => {
-        const briefing = await runAgent(chatId, "Generate a morning briefing with weather, news, and today's schedule.");
+        const briefing = await runAgent(chatId, "Generate a morning briefing with weather, news, and today's schedule.", undefined, { skipCritic: true });
         await sendTelegramMessage(chatId, briefing.text);
         console.log(`🌞 Morning briefing for ${chatId} sent.`);
     });
 
     // Evening Recap (9 PM)
     scheduler.schedule(`${chatId}_evening`, "0 21 * * *", async () => {
-        const recap = await runAgent(chatId, "Generate an evening recap of today's tasks and messages.");
+        const recap = await runAgent(chatId, "Generate an evening recap of today's tasks and messages.", undefined, { skipCritic: true });
         await sendTelegramMessage(chatId, recap.text);
         console.log(`🌙 Evening recap for ${chatId} sent.`);
     });
@@ -95,7 +95,7 @@ export function setupDefaultTasks(chatId: string) {
     // ── Finance Scheduled Tasks ──────────────────────────────────────
     scheduler.schedule(`${chatId}_finance_alerts`, "0 9 * * *", async () => {
         const prompt = `Atue como meu assistente financeiro proativo. Verifique se há contas vencendo hoje ou nos próximos 3 dias (use finance_calendar). Se houver, mande um alerta curto, amigável mas urgente, avisando sobre os valores e nomes das contas para eu não esquecer de pagar.`;
-        const result = await runAgent(chatId, prompt);
+        const result = await runAgent(chatId, prompt, undefined, { skipCritic: true });
         await sendTelegramMessage(chatId, result.text);
         console.log(`💰 Finance alerts sent for ${chatId}`);
     });
@@ -104,7 +104,7 @@ export function setupDefaultTasks(chatId: string) {
     scheduler.schedule(`${chatId}_finance_monthly`, "0 10 1 * *", async () => {
         await sendTelegramMessage(chatId, "📊 *Gerando seu Resumo Financeiro Mensal...*");
         const prompt = `Gere o resumo financeiro completo do mês passado usando finance_monthly_summary.`;
-        const aiText = await runAgent(chatId, prompt);
+        const aiText = await runAgent(chatId, prompt, undefined, { skipCritic: true });
 
         let photoUrl = "";
         try {

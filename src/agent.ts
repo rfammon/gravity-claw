@@ -36,10 +36,15 @@ export interface AgentResult {
   }[];
 }
 
+export interface AgentOptions {
+  skipCritic?: boolean;
+}
+
 export async function runAgent(
   chatId: string,
   userMessage: string,
-  userId?: number
+  userId?: number,
+  options?: AgentOptions
 ): Promise<AgentResult> {
   analyzeMessageForPatterns(chatId, userMessage);
 
@@ -163,14 +168,14 @@ FORMATTING:
     const resultsMap = new Map<string, string>();
     if (readOnlyCalls.length > 0) {
       const parallelResults = await Promise.allSettled(
-        readOnlyCalls.map((tc: ChatCompletionMessageFunctionToolCall) => executeToolCall(tc, chatId, userId, accumulatedMedia, messages))
+        readOnlyCalls.map((tc: ChatCompletionMessageFunctionToolCall) => executeToolCall(tc, chatId, userId, accumulatedMedia, messages, options?.skipCritic))
       );
       parallelResults.forEach((r, i) => {
         resultsMap.set(readOnlyCalls[i].id, r.status === "fulfilled" ? r.value : JSON.stringify({ error: String((r as any).reason) }));
       });
     }
     for (const tc of mutativeCalls) {
-      resultsMap.set(tc.id, await executeToolCall(tc, chatId, userId, accumulatedMedia, messages));
+      resultsMap.set(tc.id, await executeToolCall(tc, chatId, userId, accumulatedMedia, messages, options?.skipCritic));
     }
 
     // Reconstruct assistant message + tool results for history
@@ -189,7 +194,8 @@ async function executeToolCall(
   chatId: string,
   userId: number | undefined,
   accumulatedMedia: AgentResult["media"],
-  _messages: Message[]
+  _messages: Message[],
+  skipCritic?: boolean
 ): Promise<string> {
   const fnName = toolCall.function.name;
   const fnArgs = (() => { try { return JSON.parse(toolCall.function.arguments || "{}"); } catch { return {}; } })();
@@ -197,7 +203,7 @@ async function executeToolCall(
 
   // ── CRITIC PASS with 60s cache ────────────────────────────────────
   const SENSITIVE_TOOLS = new Set(["trello_create_card", "trello_update_card", "trello_delete_card", "supabase_insert", "delete_reminder"]);
-  if (SENSITIVE_TOOLS.has(fnName)) {
+  if (SENSITIVE_TOOLS.has(fnName) && !skipCritic) {
     const cacheKey = `${fnName}:${hashArgs(fnArgs)}`;
     const cached = criticCache.get(cacheKey);
     const now = Date.now();
@@ -205,7 +211,7 @@ async function executeToolCall(
     if (!cached || cached.expiresAt < now) {
       console.log(`🔍 critic: Reviewing "${fnName}"...`);
       try {
-        const criticPrompt = `CRITIC: Review this tool call. Respond ONLY "APPROVED" or "REJECTED: [reason]".\nTOOL: ${fnName}\nARGS: ${JSON.stringify(fnArgs)}`;
+        const criticPrompt = `CRITIC: Review this tool call. Current date/time: ${new Date().toISOString()}. Respond ONLY "APPROVED" or "REJECTED: [reason]".\nTOOL: ${fnName}\nARGS: ${JSON.stringify(fnArgs)}`;
         const reviewResponse = await chat([{ role: "user", content: criticPrompt }]);
         const reviewText = reviewResponse.choices[0].message.content || "";
         const approved = reviewText.toUpperCase().includes("APPROVED");
