@@ -31,7 +31,18 @@ export function registerTool(tool: Tool): void {
 }
 
 export function getTool(name: string): Tool | undefined {
-    return registry.get(name);
+    let tool = registry.get(name);
+    if (!tool) {
+        // Fuzzy match: ignore case and underscores/hyphens
+        const normalizedName = name.toLowerCase().replace(/[_-]/g, "");
+        for (const [key, value] of registry.entries()) {
+            if (key.toLowerCase().replace(/[_-]/g, "") === normalizedName) {
+                console.log(`🔍 [Fuzzy Match] Redirecting hallucinated tool name "${name}" to "${key}"`);
+                return value;
+            }
+        }
+    }
+    return tool;
 }
 
 // ── Default Tools Registration ───────────────────────────
