@@ -21,7 +21,8 @@ export async function ollamaChat(
                 stream: false,
                 options: {
                     temperature: 0.3,
-                    num_predict: 256, // Keep it short for simple tasks
+                    num_ctx: 16384,
+                    num_predict: 4096,
                 }
             })
         });
