@@ -55,7 +55,11 @@ export function registerSupabaseTools(): void {
 
                 // Apply ordering if provided
                 if (order) {
-                    query = query.order(String(order), { ascending: false });
+                    // Sanitize the order column. Some LLMs might pass "created_at.desc"
+                    // which causes Supabase to generate "created_at.desc.desc"
+                    const [orderCol, direction] = String(order).split('.');
+                    const isAscending = direction?.toLowerCase() === 'asc';
+                    query = query.order(orderCol, { ascending: direction ? isAscending : false });
                 }
 
                 // Execute the query
