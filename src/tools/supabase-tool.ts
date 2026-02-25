@@ -9,13 +9,13 @@ import { getClient } from "../supabase-db.js";
 export function registerSupabaseTools(): void {
     registerTool({
         name: "supabase_query",
-        description: "Execute a read-only SELECT query on the Supabase database. Use this to retrieve memories, facts, or judgments. Tables: memories, facts, bot_messages, feedback, user_judgments.",
+        description: "Execute a read-only SELECT query on the Supabase database. Tables include: memories, facts, bot_messages, feedback, user_judgments, financial_profile, expenses_one_time, expenses_recurring_fixed, expenses_recurring_variable, subscriptions, financial_projects, project_contributions, financial_alerts.",
         parameters: {
             type: "object",
             properties: {
                 table: {
                     type: "string",
-                    description: "The table to query (e.g., 'memories', 'facts', 'user_judgments')"
+                    description: "The table to query (e.g., 'memories', 'facts', 'user_judgments', 'expenses_one_time')"
                 },
                 select: {
                     type: "string",
@@ -89,13 +89,13 @@ export function registerSupabaseTools(): void {
     });
     registerTool({
         name: "supabase_insert",
-        description: "Insert one or more rows into a Supabase table. Use this to save memories, facts, or judgments. Tables: memories, facts, bot_messages, feedback, user_judgments.",
+        description: "Insert one or more rows into a Supabase table. Tables include: memories, facts, bot_messages, feedback, user_judgments, financial_profile, expenses_one_time, expenses_recurring_fixed, expenses_recurring_variable, subscriptions, financial_projects, project_contributions, financial_alerts.",
         parameters: {
             type: "object",
             properties: {
                 table: {
                     type: "string",
-                    description: "The table to insert into (e.g., 'memories', 'facts', 'user_judgments')"
+                    description: "The table to insert into (e.g., 'memories', 'facts', 'user_judgments', 'expenses_one_time')"
                 },
                 data: {
                     type: "object",

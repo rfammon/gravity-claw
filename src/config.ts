@@ -65,7 +65,6 @@ const supabaseServiceKey = optionalEnv("SUPABASE_SERVICE_KEY");
 const modalBaseUrl = optionalEnv("MODAL_BASE_URL");
 const modalApiKey = optionalEnv("MODAL_API_KEY");
 const ocrSpaceApiKey = optionalEnv("OCR_SPACE_API_KEY");
-const moltguardGatewayUrl = optionalEnv("MOLTGUARD_GATEWAY_URL");
 const masterKey = optionalEnv("MASTER_KEY");
 const puterDefaultModel = optionalEnv("PUTER_DEFAULT_MODEL", "moonshotai/kimi-k2.5");
 
@@ -97,7 +96,6 @@ export const config = {
 
     // ── Security ──────────────────────────────────────────
     masterKey,
-    moltguardGatewayUrl,
 
     // ── Ollama Fallback ───────────────────────────────────
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",

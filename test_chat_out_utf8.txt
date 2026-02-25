@@ -1,0 +1,74 @@
+﻿ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+­ƒöº Config Loading
+ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+­ƒôï Required variables:
+   TELEGRAM_BOT_TOKEN: Ô£à Loaded
+   OPENROUTER_API_KEY: Ô£à Loaded
+   GROQ_API_KEY: Ô£à Loaded
+   ALLOWED_USER_IDS: Ô£à Loaded
+
+­ƒôï Optional variables:
+   SUPABASE_URL: Ô£à Loaded (https://mb...ase.co)
+   SUPABASE_SERVICE_KEY: Ô£à Loaded (sb_secret_...nE7q5-)
+   MODAL_BASE_URL: Ô£à Loaded (https://ap...ect/v1)
+   MODAL_API_KEY: Ô£à Loaded (modalresea...T140yQ)
+   OCR_SPACE_API_KEY: Ô£à Loaded (***)
+   MASTER_KEY: ÔÜ¬ Not set (using default)
+   PUTER_DEFAULT_MODEL: ÔÜ¬ Not set (using default)
+
+­ƒôï Parsed values:
+   ALLOWED_USER_IDS: [6666022588]
+ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+Ô£à Configuration loaded successfully
+Ôÿü´©Å  Supabase: ENABLED
+­ƒöº Registered tool: browse_url
+SENDING CHAT REQUEST...
+­ƒñû Requesting LLM (Primary: OpenRouter [google/gemini-2.5-flash])...
+Ô£à LLM Response received from OpenRouter in 3031ms
+RESPONSE RECEIVED:
+{
+  "id": "gen-1772054599-oBK8cQbYKvyY9UyvpJbO",
+  "provider": "Google",
+  "model": "google/gemini-2.5-flash",
+  "object": "chat.completion",
+  "created": 1772054599,
+  "choices": [
+    {
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I can't tell you that. I don't have access to your personal information, including your Trello board.",
+        "refusal": null,
+        "reasoning": null,
+        "annotations": []
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 40,
+    "completion_tokens": 25,
+    "total_tokens": 65,
+    "cost": 0.0000745,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0000745,
+      "upstream_inference_prompt_cost": 0.000012,
+      "upstream_inference_completions_cost": 0.0000625
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0
+    }
+  }
+}

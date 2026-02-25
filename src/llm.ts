@@ -8,7 +8,7 @@ import { ollamaChat } from "./ollama.js";
 
 // ── clients ──────────────────────────────────────────────
 const openRouterClient = new OpenAI({
-    baseURL: config.moltguardGatewayUrl || "https://openrouter.ai/api/v1",
+    baseURL: "https://openrouter.ai/api/v1",
     apiKey: config.openRouterKey,
     defaultHeaders: {
         "HTTP-Referer": "https://github.com/gravity-claw",
@@ -17,12 +17,11 @@ const openRouterClient = new OpenAI({
 });
 
 const modalClient = new OpenAI({
-    baseURL: config.moltguardGatewayUrl || config.modalBaseUrl,
+    baseURL: config.modalBaseUrl,
     apiKey: config.modalApiKey,
 });
 
 const groqClient = new Groq({
-    baseURL: config.moltguardGatewayUrl || undefined,
     apiKey: config.groqApiKey,
 });
 
@@ -141,19 +140,6 @@ export async function chat(
         return msgWithoutTimestamp as Message;
     });
 
-    const systemInstruction = tools.length > 0 ? `\n\n[FERRAMENTAS DISPONÍVEIS]\nVocê DEVE usar OBRIGATORIAMENTE o seguinte formato XML para invocar funções:\n<function_calls>\n` +
-        tools.map((t: any) => `<invoke name="${t.function.name}">\n${Object.keys(t.function.parameters?.properties || {}).map(
-            (p: any) => `<parameter name="${p}">[valor]</parameter>`
-        ).join("\n")
-            }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
-
-    const messagesWithToolsInstruction = sanitizedMessages.map((m, i) => {
-        if (i === 0 && m.role === "system") {
-            return { ...m, content: String(m.content) + systemInstruction };
-        }
-        return m;
-    });
-
     const callArgs: any = {
         max_tokens: 4096,
         messages: sanitizedMessages,
@@ -219,6 +205,21 @@ export async function chat(
     // ── FALLBACK 3: OLLAMA (Local) ─────────────────────────────
     try {
         console.log(`🤖 Requesting LLM (Final Fallback: Ollama [${MODELS.ollama.standard}])...`);
+
+        // Build the XML instruction only for the local fallback since it doesn't support native tools well
+        const ollamaSystemInstruction = tools.length > 0 ? `\n\n[FERRAMENTAS DISPONÍVEIS]\nVocê DEVE usar OBRIGATORIAMENTE o seguinte formato XML para invocar funções:\n<function_calls>\n` +
+            tools.map((t: any) => `<invoke name="${t.function.name}">\n${Object.keys(t.function.parameters?.properties || {}).map(
+                (p: any) => `<parameter name="${p}">[valor]</parameter>`
+            ).join("\n")
+                }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
+
+        const messagesWithToolsInstruction = sanitizedMessages.map((m, i) => {
+            if (i === 0 && m.role === "system") {
+                return { ...m, content: String(m.content) + ollamaSystemInstruction };
+            }
+            return m;
+        });
+
         const messageObj = await withRetry(
             () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.standard, tools),
             { maxRetries: 1 }

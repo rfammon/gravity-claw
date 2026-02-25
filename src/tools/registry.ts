@@ -65,12 +65,18 @@ registerTool({
 
 /** Convert to OpenAI function-calling format */
 export function getOpenAITools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
-    return Array.from(registry.values()).map((tool) => ({
-        type: "function" as const,
-        function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-        },
-    }));
+    return Array.from(registry.values()).map((tool) => {
+        const params = JSON.parse(JSON.stringify(tool.parameters));
+        if (params.type === "object" && !params.required) {
+            params.required = [];
+        }
+        return {
+            type: "function" as const,
+            function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: params,
+            },
+        };
+    });
 }

@@ -48,7 +48,7 @@ export async function runAgent(
 ): Promise<AgentResult> {
   analyzeMessageForPatterns(chatId, userMessage);
 
-  const history = (await getChatHistory(chatId, 12)) as Message[];
+  const history = (await getChatHistory(chatId, 24)) as Message[];
   const facts = await getFacts(chatId);
   const mentalState = await getLatestState(chatId);
 
@@ -148,8 +148,11 @@ FORMATTING:
       const finalResponse = assistantMessage.content && assistantMessage.content.trim()
         ? assistantMessage.content
         : "✅ Operação finalizada.";
+
+      // Persist the user message and final response
       await saveMessage(chatId, "user", userMessage);
       await saveMessage(chatId, "assistant", finalResponse);
+
       if (finalResponse.length > 200) {
         await snapshotState(chatId, {
           last_interaction: new Date().toISOString(),
@@ -179,9 +182,19 @@ FORMATTING:
     }
 
     // Reconstruct assistant message + tool results for history
-    messages.push({ role: "assistant", content: null, tool_calls: toolCalls } as any);
+    const toolCallAssistantMsg: Message = { role: "assistant", content: assistantMessage.content || null, tool_calls: toolCalls };
+    messages.push(toolCallAssistantMsg as any);
+
+    // Persist tool calls
+    await saveMessage(chatId, "assistant", assistantMessage.content || "", { tool_calls: toolCalls });
+
     for (const tc of orderedCalls) {
-      messages.push({ role: "tool" as const, tool_call_id: tc.id, content: resultsMap.get(tc.id) ?? "" });
+      const result = resultsMap.get(tc.id) ?? "";
+      const toolMsg: Message = { role: "tool" as const, tool_call_id: tc.id, content: result };
+      messages.push(toolMsg);
+
+      // Persist tool results
+      await saveMessage(chatId, "tool", result, { tool_call_id: tc.id, name: tc.function.name });
     }
   }
 

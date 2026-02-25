@@ -17,7 +17,11 @@ function getAuth() {
 registerTool({
     name: "trello_list_boards",
     description: "Lista todos os quadros (boards) do Trello aos quais o bot tem acesso.",
-    parameters: { type: "object", properties: {} },
+    parameters: {
+        type: "object",
+        properties: {},
+        required: []
+    },
     execute: async () => {
         try {
             const { key, token } = getAuth();
@@ -285,7 +289,8 @@ registerTool({
         type: "object",
         properties: {
             boardId: { type: "string", description: "ID do quadro (opcional, padrão = Gestão de Projetos)" }
-        }
+        },
+        required: []
     },
     execute: async (args: any) => {
         const targetBoard = args?.boardId || DEFAULT_BOARD_ID;

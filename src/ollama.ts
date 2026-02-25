@@ -10,23 +10,36 @@ export async function ollamaChat(
     model: string = "qwen2.5:0.5b",
     tools?: any[]
 ): Promise<any> {
-    const baseUrl = config.ollamaBaseUrl || "http://localhost:11434";
+    const normalizedBase = (config.ollamaBaseUrl || "http://localhost:11434").replace(/\/+$/, "");
+    const isOpenAICompatible = normalizedBase.endsWith('/v1');
 
     return withRetry(async () => {
-        const response = await fetch(`${baseUrl}/api/chat`, {
+        const url = isOpenAICompatible ? `${normalizedBase}/chat/completions` : `${normalizedBase}/api/chat`;
+        const body = isOpenAICompatible ? {
+            model,
+            messages,
+            stream: false,
+            tools: tools && tools.length > 0 ? tools : undefined,
+            temperature: 0.3,
+        } : {
+            model,
+            messages,
+            stream: false,
+            tools: tools && tools.length > 0 ? tools : undefined,
+            options: {
+                temperature: 0.3,
+                num_ctx: 16384,
+                num_predict: 4096,
+            }
+        };
+
+        const response = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                model,
-                messages,
-                stream: false,
-                tools: tools && tools.length > 0 ? tools : undefined,
-                options: {
-                    temperature: 0.3,
-                    num_ctx: 16384,
-                    num_predict: 4096,
-                }
-            })
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.ollamaApiKey && { "Authorization": `Bearer ${config.ollamaApiKey}` })
+            },
+            body: JSON.stringify(body)
         });
 
         if (!response.ok) {
@@ -35,7 +48,7 @@ export async function ollamaChat(
         }
 
         const data = await response.json() as any;
-        return data.message;
+        return isOpenAICompatible ? data.choices[0].message : data.message;
     }, { maxRetries: 1 });
 }
 
@@ -46,13 +59,20 @@ export async function ollamaEmbeddings(
     input: string,
     model: string = "nomic-embed-text"
 ): Promise<number[]> {
-    const baseUrl = config.ollamaBaseUrl || "http://localhost:11434";
+    const normalizedBase = (config.ollamaBaseUrl || "http://localhost:11434").replace(/\/+$/, "");
+    const isOpenAICompatible = normalizedBase.endsWith('/v1');
 
     return withRetry(async () => {
-        const response = await fetch(`${baseUrl}/api/embeddings`, {
+        const url = isOpenAICompatible ? `${normalizedBase}/embeddings` : `${normalizedBase}/api/embeddings`;
+        const body = isOpenAICompatible ? { model, input } : { model, prompt: input };
+
+        const response = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model, prompt: input })
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.ollamaApiKey && { "Authorization": `Bearer ${config.ollamaApiKey}` })
+            },
+            body: JSON.stringify(body)
         });
 
         if (!response.ok) {
@@ -60,6 +80,6 @@ export async function ollamaEmbeddings(
         }
 
         const data = await response.json() as any;
-        return data.embedding;
+        return isOpenAICompatible ? data.data[0].embedding : data.embedding;
     }, { maxRetries: 1 });
 }
