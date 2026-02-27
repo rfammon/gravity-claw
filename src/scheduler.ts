@@ -7,6 +7,9 @@ import * as db from "./finance/finance-db.js";
 import * as calc from "./finance/finance-calculator.js";
 import { generateCategoryChartUrl } from "./finance/finance-charts.js";
 import { runCurationCycle, generateDailyReport } from "./skills/llm-tracker/index.js";
+import { runProactiveTriggers } from "./proactive-triggers.js";
+import { runDynamicTriggers, evolveTriggers } from "./trigger-manager.js";
+import { runSATC } from "./satc.js";
 
 /**
  * Scheduled Tasks System
@@ -146,6 +149,53 @@ export function setupDefaultTasks(chatId: string) {
             console.log(`🧠 Weekly judgment generated for ${chatId}`);
         } catch (err) {
             console.error(`❌ Weekly judgment error for ${chatId}:`, err);
+        }
+    });
+
+    // ── Proactive AI Triggers (Dynamic) ────────────────────────────────────
+    // Evaluate all dynamic triggers every hour
+    scheduler.schedule(`${chatId}_dynamic_triggers`, "0 * * * *", async () => {
+        try {
+            await runDynamicTriggers(chatId);
+        } catch (err) {
+            console.error(`❌ Dynamic triggers error for ${chatId}:`, err);
+        }
+    });
+
+    // Weekly AI trigger evolution — every Sunday at 11:00 PM
+    // Analyzes conversations and autonomously creates/modifies/archives triggers
+    scheduler.schedule(`${chatId}_trigger_evolution`, "0 23 * * 0", async () => {
+        try {
+            console.log(`🧬 Starting trigger evolution for ${chatId}...`);
+            await evolveTriggers(chatId);
+        } catch (err) {
+            console.error(`❌ Trigger evolution error for ${chatId}:`, err);
+        }
+    });
+
+    // Morning Dashboard Briefing at 07:30
+    scheduler.schedule(`${chatId}_morning_dashboard`, "30 7 * * *", async () => {
+        try {
+            const prompt = `Gere um DASHBOARD PROATIVO matinal para o Rafael. Inclua:
+1. Saudação dramática no estilo Megamente
+2. Mini-resumo de tarefas urgentes (use trello_list_tasks se necessário)
+3. Lembretes financeiros se houver contas próximas (finance_calendar)
+4. Uma dica motivacional CURTA sobre seus objetivos principais (Petrobras, Gravity Claw)
+Formate de forma concisa com emojis. Máximo 15 linhas.`;
+            const result = await runAgent(chatId, prompt);
+            await sendTelegramMessage(chatId, result.text);
+            console.log(`☀️ Morning dashboard sent for ${chatId}`);
+        } catch (err) {
+            console.error(`❌ Morning dashboard error for ${chatId}:`, err);
+        }
+    });
+
+    // SATC — Sub-Agent for Critical Tasks at 7 PM on weekdays
+    scheduler.schedule(`${chatId}_satc`, "0 19 * * 1-5", async () => {
+        try {
+            await runSATC(chatId);
+        } catch (err) {
+            console.error(`❌ SATC error for ${chatId}:`, err);
         }
     });
 }

@@ -11,6 +11,8 @@
 import { config } from "./config.js";
 
 // ── Shared Types ─────────────────────────────────────────────────────
+export type { InteractionLogEntry } from "./memory.js";
+import type { InteractionLogEntry } from "./memory.js";
 export interface MemoryEntry {
     role: "user" | "assistant" | "system" | "tool";
     content: string;
@@ -34,6 +36,9 @@ export interface IMemoryProvider {
     getLatestJudgments(chatId: string): string | Promise<string>;
     getMemoriesSince(chatId: string, sinceDateISO: string): MemoryEntry[] | Promise<MemoryEntry[]>;
     getJudgmentsSince(chatId: string, type: "daily", sinceDateISO: string): { opinion: string; timestamp: string }[] | Promise<{ opinion: string; timestamp: string }[]>;
+
+    saveInteractionLog(chatId: string, entry: InteractionLogEntry): void | Promise<void>;
+    getInteractionLogs(chatId: string, limit?: number): (InteractionLogEntry & { timestamp: string })[] | Promise<(InteractionLogEntry & { timestamp: string })[]>;
 }
 
 // ── Provider Selection ───────────────────────────────────────────────
@@ -63,6 +68,9 @@ if (config.supabaseUrl && config.supabaseServiceKey) {
         getLatestJudgments: mem.getLatestJudgments,
         getMemoriesSince: mem.getMemoriesSince,
         getJudgmentsSince: mem.getJudgmentsSince,
+
+        saveInteractionLog: mem.saveInteractionLog,
+        getInteractionLogs: mem.getInteractionLogs,
     };
 }
 
@@ -82,3 +90,5 @@ export const saveJudgment = db.saveJudgment.bind(db);
 export const getLatestJudgments = db.getLatestJudgments.bind(db);
 export const getMemoriesSince = db.getMemoriesSince.bind(db);
 export const getJudgmentsSince = db.getJudgmentsSince.bind(db);
+export const saveInteractionLog = db.saveInteractionLog.bind(db);
+export const getInteractionLogs = db.getInteractionLogs.bind(db);

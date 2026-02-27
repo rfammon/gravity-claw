@@ -64,7 +64,19 @@ db.exec(`
     period_start DATETIME NOT NULL,
     period_end DATETIME NOT NULL,
     opinion TEXT NOT NULL,
+    emotional_state TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS interaction_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    topic TEXT,
+    tools_used TEXT,
+    feedback_signal TEXT,
+    response_length INTEGER,
+    emotional_state TEXT
   );
 `);
 
@@ -210,3 +222,44 @@ export function getJudgmentsSince(chatId: string, type: "daily", sinceDateISO: s
     const stmt = db.prepare("SELECT opinion, timestamp FROM user_judgments WHERE chat_id = ? AND type = ? AND timestamp >= ? ORDER BY timestamp ASC");
     return stmt.all(chatId, type, sinceDateISO) as any[];
 }
+
+// ── Interaction Log (Fase 1.3 — Diário de Bordo) ──────────────────
+
+export interface InteractionLogEntry {
+    topic?: string;
+    toolsUsed?: string[];
+    feedbackSignal?: string;
+    responseLength?: number;
+    emotionalState?: string;
+}
+
+export function saveInteractionLog(chatId: string, entry: InteractionLogEntry): void {
+    const stmt = db.prepare(`
+        INSERT INTO interaction_log (chat_id, topic, tools_used, feedback_signal, response_length, emotional_state)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+        chatId,
+        entry.topic ?? null,
+        entry.toolsUsed ? JSON.stringify(entry.toolsUsed) : null,
+        entry.feedbackSignal ?? null,
+        entry.responseLength ?? null,
+        entry.emotionalState ?? null,
+    );
+}
+
+export function getInteractionLogs(chatId: string, limit: number = 20): (InteractionLogEntry & { timestamp: string })[] {
+    const stmt = db.prepare(
+        "SELECT topic, tools_used, feedback_signal, response_length, emotional_state, timestamp FROM interaction_log WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?"
+    );
+    const rows = stmt.all(chatId, limit) as any[];
+    return rows.map(row => ({
+        topic: row.topic,
+        toolsUsed: row.tools_used ? JSON.parse(row.tools_used) : [],
+        feedbackSignal: row.feedback_signal,
+        responseLength: row.response_length,
+        emotionalState: row.emotional_state,
+        timestamp: row.timestamp,
+    }));
+}
+

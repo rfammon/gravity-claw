@@ -257,4 +257,55 @@ export class SupabaseMemory {
             timestamp: row.created_at,
         }));
     }
+
+    // ── Interaction Log (Fase 1.3) ────────────────────────────────
+
+    async saveInteractionLog(chatId: string, entry: {
+        topic?: string;
+        toolsUsed?: string[];
+        feedbackSignal?: string;
+        responseLength?: number;
+        emotionalState?: string;
+    }): Promise<void> {
+        const { error } = await getClient()
+            .from("interaction_log")
+            .insert({
+                chat_id: chatId,
+                topic: entry.topic ?? null,
+                tools_used: entry.toolsUsed ? JSON.stringify(entry.toolsUsed) : null,
+                feedback_signal: entry.feedbackSignal ?? null,
+                response_length: entry.responseLength ?? null,
+                emotional_state: entry.emotionalState ?? null,
+            });
+        if (error) console.error("❌ Supabase saveInteractionLog:", error.message);
+    }
+
+    async getInteractionLogs(chatId: string, limit: number = 20): Promise<({
+        topic?: string;
+        toolsUsed?: string[];
+        feedbackSignal?: string;
+        responseLength?: number;
+        emotionalState?: string;
+    } & { timestamp: string })[]> {
+        const { data, error } = await getClient()
+            .from("interaction_log")
+            .select("topic, tools_used, feedback_signal, response_length, emotional_state, created_at")
+            .eq("chat_id", chatId)
+            .order("created_at", { ascending: false })
+            .limit(limit);
+
+        if (error) {
+            console.error("❌ Supabase getInteractionLogs:", error.message);
+            return [];
+        }
+
+        return (data ?? []).map((row) => ({
+            topic: row.topic,
+            toolsUsed: row.tools_used ? JSON.parse(row.tools_used) : [],
+            feedbackSignal: row.feedback_signal,
+            responseLength: row.response_length,
+            emotionalState: row.emotional_state,
+            timestamp: row.created_at,
+        }));
+    }
 }

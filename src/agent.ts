@@ -1,9 +1,10 @@
 import type { ChatCompletionMessageFunctionToolCall } from "openai/resources/chat/completions/completions.js";
 import { chat, type Message } from "./llm.js";
 import { getTool } from "./tools/registry.js";
-import { saveMessage, getChatHistory, getFacts, getFeedbackSummary, getLatestJudgments } from "./db-provider.js";
+import { saveMessage, getChatHistory, getFacts, getFeedbackSummary, getLatestJudgments, saveInteractionLog } from "./db-provider.js";
 import { cachedSkills } from "./skills.js";
-import { analyzeMessageForPatterns } from "./recommendations.js";
+import { analyzeMessageForPatterns, getTopTopics } from "./recommendations.js";
+import { runProjectAgentIfBlocked } from "./project-agent.js";
 
 const MAX_ITERATIONS = 10;
 
@@ -22,7 +23,14 @@ export async function runAgent(
 ): Promise<AgentResult> {
   // 0. Track behavior patterns for proactive recommendations
   analyzeMessageForPatterns(chatId, userMessage);
-  
+
+  // 0b. Project Agent: detect blockage and proactively search for solutions
+  const blockageContext = await runProjectAgentIfBlocked(userMessage);
+  const enrichedMessage = blockageContext ? userMessage + blockageContext : userMessage;
+
+  // Track which tools are called during this run
+  const calledTools: string[] = [];
+
   // 1. Get history from DB (limit to last 15 messages to save tokens and maintain concise context)
   const history = (await getChatHistory(chatId, 15)) as Message[];
 
@@ -77,7 +85,7 @@ FORMATTING:
   };
 
   // Prepend system prompt if not present or always refresh it
-  const messages: Message[] = [systemPrompt, ...history, { role: "user", content: userMessage }];
+  const messages: Message[] = [systemPrompt, ...history, { role: "user", content: enrichedMessage }];
 
   let iterations = 0;
   const accumulatedMedia: AgentResult["media"] = [];
@@ -105,13 +113,21 @@ FORMATTING:
       await saveMessage(chatId, "user", userMessage);
       await saveMessage(chatId, "assistant", finalResponse);
 
-      // If no tools were called this iteration, return the final text
-      // We will need to accumulate media across iterations. See below.
+      // Log interaction for analytics and trigger evolution
+      const topTopicsList = getTopTopics(chatId, 3);
+      Promise.resolve(saveInteractionLog(chatId, {
+        topic: topTopicsList[0],
+        toolsUsed: calledTools,
+        responseLength: finalResponse.length,
+      })).catch(() => { });
+
       return { text: finalResponse, media: accumulatedMedia };
     }
 
     for (const toolCall of toolCalls) {
       const fnName = toolCall.function.name;
+      // Track tool usage for interaction log
+      if (!calledTools.includes(fnName)) calledTools.push(fnName);
       const fnArgs = JSON.parse(toolCall.function.arguments || "{}");
       const tool = getTool(fnName);
 
