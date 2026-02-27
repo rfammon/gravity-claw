@@ -308,4 +308,130 @@ export class SupabaseMemory {
             timestamp: row.created_at,
         }));
     }
+
+    // ── Reminders ─────────────────────────────────────────────────────
+
+    async addReminder(chatId: string, userId: number, text: string, remindAt: Date, metadata?: any): Promise<void> {
+        const { error } = await getClient()
+            .from("reminders")
+            .insert({
+                chat_id: chatId,
+                user_id: userId,
+                reminder_text: text,
+                remind_at: remindAt.toISOString(),
+                status: "pending",
+                metadata: metadata ? JSON.stringify(metadata) : null,
+            });
+        if (error) console.error("❌ Supabase addReminder:", error.message);
+    }
+
+    async getPendingReminders(): Promise<any[]> {
+        const { data, error } = await getClient()
+            .from("reminders")
+            .select("*")
+            .eq("status", "pending")
+            .lte("remind_at", new Date().toISOString())
+            .order("remind_at", { ascending: true });
+
+        if (error) {
+            console.error("❌ Supabase getPendingReminders:", error.message);
+            return [];
+        }
+        return data ?? [];
+    }
+
+    async updateReminderStatus(id: string, status: 'completed' | 'failed' | 'cancelled'): Promise<void> {
+        const { error } = await getClient()
+            .from("reminders")
+            .update({ status, updated_at: new Date().toISOString() })
+            .eq("id", id);
+        if (error) console.error("❌ Supabase updateReminderStatus:", error.message);
+    }
+
+    async listReminders(chatId: string): Promise<any[]> {
+        const { data, error } = await getClient()
+            .from("reminders")
+            .select("*")
+            .eq("chat_id", chatId)
+            .order("remind_at", { ascending: false })
+            .limit(20);
+
+        if (error) {
+            console.error("❌ Supabase listReminders:", error.message);
+            return [];
+        }
+        return data ?? [];
+    }
+
+    async cancelReminder(chatId: string, reminderId: number): Promise<boolean> {
+        const { error } = await getClient()
+            .from("reminders")
+            .update({ status: "cancelled", updated_at: new Date().toISOString() })
+            .eq("id", reminderId)
+            .eq("chat_id", chatId);
+
+        if (error) {
+            console.error("❌ Supabase cancelReminder:", error.message);
+            return false;
+        }
+        return true;
+    }
+
+    // ── Mental State ──────────────────────────────────────────────────
+
+    async snapshotState(chatId: string, stateData: any, reason?: string): Promise<void> {
+        const { error } = await getClient()
+            .from("mental_states")
+            .insert({
+                chat_id: chatId,
+                state_data: stateData,
+                snapshot_reason: reason || null,
+            });
+        if (error) console.error("❌ Supabase snapshotState:", error.message);
+    }
+
+    async getLatestState(chatId: string): Promise<any | null> {
+        const { data, error } = await getClient()
+            .from("mental_states")
+            .select("*")
+            .eq("chat_id", chatId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error) {
+            if (error.code !== "PGRST116") console.error("❌ Supabase getLatestState:", error.message);
+            return null;
+        }
+        return data?.state_data ?? null;
+    }
+
+    // ── Automation Status ─────────────────────────────────────────────
+
+    async updateAutomationStatus(taskId: string, status: 'success' | 'failure' | 'running', summary?: string, metadata?: any): Promise<void> {
+        const { error } = await getClient()
+            .from("automation_status")
+            .upsert({
+                id: taskId,
+                status,
+                summary: summary || null,
+                metadata: metadata ? JSON.stringify(metadata) : null,
+                last_run_at: new Date().toISOString(),
+            }, { onConflict: "id" });
+        if (error) console.error("❌ Supabase updateAutomationStatus:", error.message);
+    }
+
+    async getAutomationStatus(): Promise<any[]> {
+        const { data, error } = await getClient()
+            .from("automation_status")
+            .select("*")
+            .order("updated_at", { ascending: false })
+            .limit(20);
+
+        if (error) {
+            console.error("❌ Supabase getAutomationStatus:", error.message);
+            return [];
+        }
+        return data ?? [];
+    }
 }
