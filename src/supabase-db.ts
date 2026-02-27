@@ -1,6 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { config } from "./config.js";
-import { withRetry } from "./utils/network.js";
 
 // Inline types to avoid circular import with db-provider
 interface MemoryEntry {
@@ -30,75 +29,63 @@ export class SupabaseMemory {
     readonly backend = "supabase" as const;
 
     async saveMessage(chatId: string, role: string, content: string, metadata?: any): Promise<void> {
-        await withRetry(async () => {
-            const { error } = await getClient()
-                .from("memories")
-                .insert({
-                    chat_id: chatId,
-                    role,
-                    content,
-                    metadata: metadata ?? null,
-                });
-            if (error) throw error;
-        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase saveMessage:", err.message));
+        const { error } = await getClient()
+            .from("memories")
+            .insert({
+                chat_id: chatId,
+                role,
+                content,
+                metadata: metadata ?? null,
+            });
+        if (error) console.error("❌ Supabase saveMessage:", error.message);
     }
 
     async getChatHistory(chatId: string, limit: number = 50): Promise<MemoryEntry[]> {
-        try {
-            const { data, error } = await withRetry(async () => {
-                const res = await getClient()
-                    .from("memories")
-                    .select("role, content, created_at")
-                    .eq("chat_id", chatId)
-                    .order("created_at", { ascending: false })
-                    .limit(limit);
-                if (res.error) throw res.error;
-                return res;
-            }, { maxRetries: 2 });
+        const { data, error } = await getClient()
+            .from("memories")
+            .select("role, content, created_at")
+            .eq("chat_id", chatId)
+            .order("created_at", { ascending: false })
+            .limit(limit);
 
-            return (data ?? []).reverse().map((row) => ({
-                role: row.role as MemoryEntry["role"],
-                content: row.content,
-                timestamp: row.created_at,
-            }));
-        } catch (error: any) {
+        if (error) {
             console.error("❌ Supabase getChatHistory:", error.message);
             return [];
         }
+
+        return (data ?? []).reverse().map((row) => ({
+            role: row.role as MemoryEntry["role"],
+            content: row.content,
+            timestamp: row.created_at,
+        }));
     }
 
     async storeFact(chatId: string, key: string, value: string): Promise<void> {
-        await withRetry(async () => {
-            const { error } = await getClient()
-                .from("facts")
-                .upsert(
-                    { chat_id: chatId, key, value, updated_at: new Date().toISOString() },
-                    { onConflict: "chat_id,key" }
-                );
-            if (error) throw error;
-        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase storeFact:", err.message));
+        const { error } = await getClient()
+            .from("facts")
+            .upsert(
+                { chat_id: chatId, key, value, updated_at: new Date().toISOString() },
+                { onConflict: "chat_id,key" }
+            );
+        if (error) console.error("❌ Supabase storeFact:", error.message);
     }
 
     async getFacts(chatId: string): Promise<Record<string, string>> {
-        try {
-            const { data, error } = await withRetry(async () => {
-                const res = await getClient()
-                    .from("facts")
-                    .select("key, value")
-                    .eq("chat_id", chatId);
-                if (res.error) throw res.error;
-                return res;
-            }, { maxRetries: 2 });
+        const { data, error } = await getClient()
+            .from("facts")
+            .select("key, value")
+            .eq("chat_id", chatId);
 
-            const facts: Record<string, string> = {};
-            (data ?? []).forEach((row) => {
-                facts[row.key] = row.value;
-            });
-            return facts;
-        } catch (error: any) {
+        if (error) {
             console.error("❌ Supabase getFacts:", error.message);
             return {};
         }
+
+        const facts: Record<string, string> = {};
+        (data ?? []).forEach((row) => {
+            facts[row.key] = row.value;
+        });
+        return facts;
     }
 
     async clearHistory(chatId: string): Promise<void> {
@@ -271,150 +258,54 @@ export class SupabaseMemory {
         }));
     }
 
-    // ── Reminders ──────────────────────────────────────────────
+    // ── Interaction Log (Fase 1.3) ────────────────────────────────
 
-    async addReminder(chatId: string, userId: number, text: string, remindAt: Date, metadata?: any): Promise<void> {
-        await withRetry(async () => {
-            const { error } = await getClient()
-                .from("reminders")
-                .insert({
-                    chat_id: chatId,
-                    user_id: userId,
-                    reminder_text: text,
-                    remind_at: remindAt.toISOString(),
-                    status: "pending",
-                    metadata: metadata ?? null,
-                });
-            if (error) throw error;
-        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase addReminder:", err.message));
+    async saveInteractionLog(chatId: string, entry: {
+        topic?: string;
+        toolsUsed?: string[];
+        feedbackSignal?: string;
+        responseLength?: number;
+        emotionalState?: string;
+    }): Promise<void> {
+        const { error } = await getClient()
+            .from("interaction_log")
+            .insert({
+                chat_id: chatId,
+                topic: entry.topic ?? null,
+                tools_used: entry.toolsUsed ? JSON.stringify(entry.toolsUsed) : null,
+                feedback_signal: entry.feedbackSignal ?? null,
+                response_length: entry.responseLength ?? null,
+                emotional_state: entry.emotionalState ?? null,
+            });
+        if (error) console.error("❌ Supabase saveInteractionLog:", error.message);
     }
 
-    async getPendingReminders(): Promise<any[]> {
-        return await withRetry(async () => {
-            const { data, error } = await getClient()
-                .from("reminders")
-                .select("*")
-                .eq("status", "pending")
-                .lte("remind_at", new Date().toISOString());
-            if (error) throw error;
-            return data ?? [];
-        }, { maxRetries: 2 }).catch(err => {
-            console.error("❌ Supabase getPendingReminders:", err.message);
+    async getInteractionLogs(chatId: string, limit: number = 20): Promise<({
+        topic?: string;
+        toolsUsed?: string[];
+        feedbackSignal?: string;
+        responseLength?: number;
+        emotionalState?: string;
+    } & { timestamp: string })[]> {
+        const { data, error } = await getClient()
+            .from("interaction_log")
+            .select("topic, tools_used, feedback_signal, response_length, emotional_state, created_at")
+            .eq("chat_id", chatId)
+            .order("created_at", { ascending: false })
+            .limit(limit);
+
+        if (error) {
+            console.error("❌ Supabase getInteractionLogs:", error.message);
             return [];
-        });
-    }
+        }
 
-    async updateReminderStatus(id: string, status: 'completed' | 'failed' | 'cancelled'): Promise<void> {
-        await withRetry(async () => {
-            const { error } = await getClient()
-                .from("reminders")
-                .update({ status, updated_at: new Date().toISOString() })
-                .eq("id", id);
-            if (error) throw error;
-        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase updateReminderStatus:", err.message));
-    }
-
-    async listReminders(chatId: string): Promise<any[]> {
-        return await withRetry(async () => {
-            const { data, error } = await getClient()
-                .from("reminders")
-                .select("*")
-                .eq("chat_id", chatId)
-                .eq("status", "pending")
-                .order("remind_at", { ascending: true });
-            if (error) throw error;
-            return data ?? [];
-        }, { maxRetries: 2 }).catch(err => {
-            console.error("❌ Supabase listReminders:", err.message);
-            return [];
-        });
-    }
-
-    async cancelReminder(chatId: string, reminderId: number): Promise<boolean> {
-        return await withRetry(async () => {
-            const { error } = await getClient()
-                .from("reminders")
-                .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-                .eq("id", reminderId)
-                .eq("chat_id", chatId);
-            if (error) throw error;
-            return true;
-        }, { maxRetries: 2 }).catch(err => {
-            console.error("❌ Supabase cancelReminder:", err.message);
-            return false;
-        });
-    }
-
-    // ── MENTAL STATE VERSIONING ──────────────────────────────
-
-    async snapshotState(chatId: string, stateData: any, reason?: string): Promise<void> {
-        await withRetry(async () => {
-            const { data: latest } = await getClient()
-                .from("mental_states")
-                .select("version")
-                .eq("chat_id", chatId)
-                .order("version", { ascending: false })
-                .limit(1);
-
-            const nextVersion = (latest?.[0]?.version || 0) + 1;
-
-            const { error } = await getClient()
-                .from("mental_states")
-                .insert({
-                    chat_id: chatId,
-                    version: nextVersion,
-                    state_data: stateData,
-                    snapshot_reason: reason
-                });
-            if (error) throw error;
-        }, { maxRetries: 2 }).catch(err => console.error("❌ Supabase snapshotState:", err.message));
-    }
-
-    async getLatestState(chatId: string): Promise<any | null> {
-        return await withRetry(async () => {
-            const { data, error } = await getClient()
-                .from("mental_states")
-                .select("state_data")
-                .eq("chat_id", chatId)
-                .order("version", { ascending: false })
-                .limit(1);
-
-            if (error) throw error;
-            return data?.[0]?.state_data || null;
-        }, { maxRetries: 1 }).catch(err => {
-            console.error("❌ Supabase getLatestState:", err.message);
-            return null;
-        });
-    }
-
-    // ── AUTOMATION STATUS ───────────────────────────────────────────
-
-    async updateAutomationStatus(taskId: string, status: 'success' | 'failure' | 'running', summary?: string, metadata?: any): Promise<void> {
-        await withRetry(async () => {
-            const { error } = await getClient()
-                .from("automation_status")
-                .upsert({
-                    id: taskId,
-                    status,
-                    summary,
-                    metadata: metadata ?? {},
-                    last_run_at: new Date().toISOString(),
-                }, { onConflict: "id" });
-            if (error) throw error;
-        }, { maxRetries: 2 }).catch(err => console.error(`❌ Supabase updateAutomationStatus (${taskId}):`, err.message));
-    }
-
-    async getAutomationStatus(): Promise<any[]> {
-        return await withRetry(async () => {
-            const { data, error } = await getClient()
-                .from("automation_status")
-                .select("*")
-                .order("last_run_at", { ascending: false });
-            if (error) throw error;
-            return data ?? [];
-        }, { maxRetries: 1 }).catch(err => {
-            console.error("❌ Supabase getAutomationStatus:", err.message);
-            return [];
-        });
+        return (data ?? []).map((row) => ({
+            topic: row.topic,
+            toolsUsed: row.tools_used ? JSON.parse(row.tools_used) : [],
+            feedbackSignal: row.feedback_signal,
+            responseLength: row.response_length,
+            emotionalState: row.emotional_state,
+            timestamp: row.created_at,
+        }));
     }
 }

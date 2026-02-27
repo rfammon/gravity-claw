@@ -44,7 +44,7 @@ db.exec(`
   );
 `);
 
-export type PatternType = 
+export type PatternType =
   | "topic_frequency"
   | "time_pattern"
   | "command_usage"
@@ -74,6 +74,12 @@ const TOPIC_KEYWORDS: Record<string, string[]> = {
   learning: ["aprender", "estudar", "curso", "livro", "tutorial"],
   health: ["saúde", "exercício", "academia", "medicamento", "consulta"],
   work: ["trabalho", "cliente", "entrega", "prazo", "deadline"],
+  // ── Rafael-specific topics (Rafael-Watch) ───────────────────────────
+  petrobras: ["petrobras", "concurso", "edital", "consistência", "plano de consistência", "petro"],
+  python_study: ["python", "módulo", "exercício", "programação", "algoritmo", "lista de exercícios"],
+  casa_nova: ["apartamento", "mudança", "varanda", "aquecedor", "compras mudança", "imóvel", "aluguel", "casa nova"],
+  geoprocessamento: ["geoprocessamento", "sig", "qgis", "arcgis", "shapefile", "satélite", "utm", "sensoriamento", "ibge", "geoespacial"],
+  gravity_claw: ["gravity claw", "gravityclaw", "bot", "agente", "megamente", "megamind", "openclaw"],
 };
 
 export function trackPattern(chatId: string, pattern: BehaviorPattern): void {
@@ -87,7 +93,7 @@ export function trackPattern(chatId: string, pattern: BehaviorPattern): void {
       pattern_value = excluded.pattern_value,
       metadata = excluded.metadata
   `);
-  
+
   stmt.run(
     chatId,
     pattern.patternType,
@@ -100,7 +106,7 @@ export function trackPattern(chatId: string, pattern: BehaviorPattern): void {
 export function analyzeMessageForPatterns(chatId: string, message: string): void {
   const lowerMsg = message.toLowerCase();
   const hour = new Date().getHours();
-  
+
   for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
     if (keywords.some(kw => lowerMsg.includes(kw))) {
       trackPattern(chatId, {
@@ -111,13 +117,13 @@ export function analyzeMessageForPatterns(chatId: string, message: string): void
       });
     }
   }
-  
+
   trackPattern(chatId, {
     patternType: "time_pattern",
     patternKey: `hour_${hour}`,
     metadata: { dayOfWeek: new Date().getDay() }
   });
-  
+
   if (lowerMsg.startsWith("/")) {
     const cmd = lowerMsg.split(" ")[0];
     trackPattern(chatId, {
@@ -125,7 +131,7 @@ export function analyzeMessageForPatterns(chatId: string, message: string): void
       patternKey: cmd
     });
   }
-  
+
   const financeMatch = lowerMsg.match(/(?:gastei|comprei|paguei|recebi|ganhei)\s+(?:r?\$?\s*)?(\d+)/);
   if (financeMatch) {
     trackPattern(chatId, {
@@ -140,17 +146,17 @@ export function analyzeMessageForPatterns(chatId: string, message: string): void
 export function getPatterns(chatId: string, patternType?: PatternType): BehaviorPattern[] {
   let query = "SELECT * FROM behavior_patterns WHERE chat_id = ?";
   const params: any[] = [chatId];
-  
+
   if (patternType) {
     query += " AND pattern_type = ?";
     params.push(patternType);
   }
-  
+
   query += " ORDER BY occurrence_count DESC LIMIT 50";
-  
+
   const stmt = db.prepare(query);
   const rows = stmt.all(...params) as any[];
-  
+
   return rows.map(row => ({
     patternType: row.pattern_type as PatternType,
     patternKey: row.pattern_key,
@@ -168,7 +174,7 @@ export function getTopTopics(chatId: string, limit: number = 5): string[] {
     ORDER BY total DESC
     LIMIT ?
   `);
-  
+
   const rows = stmt.all(chatId, limit) as { pattern_key: string }[];
   return rows.map(r => r.pattern_key);
 }
@@ -182,7 +188,7 @@ export function getActiveHours(chatId: string): number[] {
     ORDER BY total DESC
     LIMIT 5
   `);
-  
+
   const rows = stmt.all(chatId) as { pattern_key: string }[];
   return rows.map(r => parseInt(r.pattern_key.replace("hour_", "")));
 }
@@ -193,9 +199,9 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
   const activeHours = getActiveHours(chatId);
   const facts = await getFacts(chatId);
   const history = await getChatHistory(chatId, 30);
-  
+
   const recommendations: Recommendation[] = [];
-  
+
   if (topTopics.includes("finance") && !facts["last_finance_review"]) {
     recommendations.push({
       id: 0,
@@ -204,7 +210,7 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
       priority: 8
     });
   }
-  
+
   if (topTopics.includes("tasks") || topTopics.includes("trello")) {
     recommendations.push({
       id: 0,
@@ -213,7 +219,7 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
       priority: 7
     });
   }
-  
+
   if (activeHours.length > 0 && activeHours[0] >= 8 && activeHours[0] <= 10) {
     recommendations.push({
       id: 0,
@@ -222,7 +228,7 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
       priority: 9
     });
   }
-  
+
   if (activeHours.length > 0 && activeHours[0] >= 18 && activeHours[0] <= 21) {
     recommendations.push({
       id: 0,
@@ -231,7 +237,7 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
       priority: 8
     });
   }
-  
+
   if (topTopics.includes("health") && !facts["last_health_check"]) {
     recommendations.push({
       id: 0,
@@ -240,7 +246,7 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
       priority: 6
     });
   }
-  
+
   if (topTopics.includes("learning")) {
     recommendations.push({
       id: 0,
@@ -249,7 +255,7 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
       priority: 5
     });
   }
-  
+
   if (recommendations.length === 0 && topTopics.length > 0) {
     recommendations.push({
       id: 0,
@@ -258,7 +264,7 @@ export async function generateRecommendations(chatId: string): Promise<Recommend
       priority: 4
     });
   }
-  
+
   return recommendations.sort((a, b) => b.priority - a.priority);
 }
 
@@ -266,17 +272,17 @@ export async function generateAIRecommendation(chatId: string): Promise<string |
   const patterns = getPatterns(chatId);
   const topTopics = getTopTopics(chatId);
   const history = await getChatHistory(chatId, 50);
-  
+
   if (patterns.length < 10) {
     return null;
   }
-  
+
   const recentTopics = patterns
     .filter(p => p.patternType === "topic_frequency")
     .slice(0, 5)
     .map(p => `${p.patternKey} (${p.patternValue}h)`)
     .join(", ");
-  
+
   const systemPrompt: Message = {
     role: "system",
     content: `Você é o Megamente sugerindo uma ação PROATIVA para o usuário.
@@ -292,11 +298,11 @@ Regras:
 - Máximo 2 frases
 - Se não houver padrão claro, responda apenas "SKIP"`
   };
-  
+
   try {
     const response = await chat([systemPrompt]);
     const suggestion = response.choices[0]?.message?.content?.trim();
-    
+
     if (suggestion && suggestion !== "SKIP") {
       saveRecommendation(chatId, suggestion, "AI-generated pattern analysis", 7);
       return suggestion;
@@ -304,7 +310,7 @@ Regras:
   } catch (err) {
     console.error("⚠️ AI recommendation generation failed:", err);
   }
-  
+
   return null;
 }
 
@@ -313,7 +319,7 @@ export function saveRecommendation(chatId: string, recommendation: string, reaso
     INSERT INTO recommendations (chat_id, recommendation, reason, priority)
     VALUES (?, ?, ?, ?)
   `);
-  
+
   const result = stmt.run(chatId, recommendation, reason, priority);
   return Number(result.lastInsertRowid);
 }
@@ -326,7 +332,7 @@ export function getPendingRecommendations(chatId: string, limit: number = 3): Re
     ORDER BY priority DESC, created_at DESC
     LIMIT ?
   `);
-  
+
   return stmt.all(chatId, limit) as Recommendation[];
 }
 
@@ -364,7 +370,7 @@ export function getRecommendationStats(chatId: string): {
 } {
   const patterns = db.prepare("SELECT COUNT(*) as count FROM behavior_patterns WHERE chat_id = ?").get(chatId) as { count: number };
   const pending = db.prepare("SELECT COUNT(*) as count FROM recommendations WHERE chat_id = ? AND shown = 0").get(chatId) as { count: number };
-  
+
   return {
     totalPatterns: patterns.count,
     topTopics: getTopTopics(chatId),
@@ -372,3 +378,30 @@ export function getRecommendationStats(chatId: string): {
     pendingRecommendations: pending.count
   };
 }
+
+/**
+ * Checks if a topic has been "silent" (not mentioned) for more than `thresholdHours` hours.
+ * Uses the `last_seen` timestamp from behavior_patterns.
+ * Returns true if the topic was NEVER seen OR hasn't been seen in > thresholdHours.
+ */
+export function detectTopicSilence(chatId: string, topic: string, thresholdHours: number): boolean {
+  const stmt = db.prepare(`
+    SELECT last_seen
+    FROM behavior_patterns
+    WHERE chat_id = ? AND pattern_type = 'topic_frequency' AND pattern_key = ?
+    ORDER BY last_seen DESC
+    LIMIT 1
+  `);
+
+  const row = stmt.get(chatId, topic) as { last_seen: string } | undefined;
+
+  if (!row) {
+    // Never mentioned — consider it silent only if threshold > 0
+    return thresholdHours > 0;
+  }
+
+  const lastSeen = new Date(row.last_seen);
+  const hoursSince = (Date.now() - lastSeen.getTime()) / (1000 * 60 * 60);
+  return hoursSince > thresholdHours;
+}
+
