@@ -30,7 +30,7 @@ function parseUserIds(raw: string): number[] {
 export const config = {
     telegramToken: requireEnv("TELEGRAM_BOT_TOKEN"),
     openRouterKey: requireEnv("OPENROUTER_API_KEY"),
-    groqApiKey: requireEnv("GROQ_API_KEY"),
+    groqApiKey: process.env.GROQ_API_KEY || "",
     allowedUserIds: parseUserIds(requireEnv("ALLOWED_USER_IDS")),
     airGappedMode: process.env.AIR_GAPPED_MODE === "true",
     modalBaseUrl: process.env.MODAL_BASE_URL || "",

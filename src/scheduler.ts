@@ -41,17 +41,25 @@ export const scheduler = new Scheduler();
 // Satisfies: 1. Morning Briefing
 export function setupDefaultTasks(chatId: string) {
     scheduler.schedule(`${chatId}_morning`, "0 8 * * *", async () => {
-        const briefing = await runAgent(chatId, "Generate a morning briefing with weather, news, and today's schedule.");
-        // Note: We need a way to send this back to Telegram, 
-        // will likely need to export the bot instance or a reply function.
-        console.log(`🌞 Morning briefing for ${chatId}: ${briefing.text.substring(0, 50)}...`);
+        try {
+            const briefing = await runAgent(chatId, "Generate a morning briefing with weather, news, and today's schedule.");
+            await sendTelegramMessage(chatId, briefing.text);
+            console.log(`🌞 Morning briefing sent for ${chatId}`);
+        } catch (err) {
+            console.error(`❌ Morning briefing error for ${chatId}:`, err);
+        }
     });
 
     // Evening Recap (e.g., at 9 PM)
     // Satisfies: 2. Evening Recap
     scheduler.schedule(`${chatId}_evening`, "0 21 * * *", async () => {
-        const recap = await runAgent(chatId, "Generate an evening recap of today's tasks and messages.");
-        console.log(`🌙 Evening recap for ${chatId}: ${recap.text.substring(0, 50)}...`);
+        try {
+            const recap = await runAgent(chatId, "Generate an evening recap of today's tasks and messages.");
+            await sendTelegramMessage(chatId, recap.text);
+            console.log(`🌙 Evening recap sent for ${chatId}`);
+        } catch (err) {
+            console.error(`❌ Evening recap error for ${chatId}:`, err);
+        }
     });
 
     // ── Finance Scheduled Tasks ──────────────────────────────────────
