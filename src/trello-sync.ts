@@ -37,11 +37,15 @@ db.exec(`
     labels TEXT,
     pos REAL,
     url TEXT,
+    attachment_count INTEGER DEFAULT 0,
     synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 
 console.log("🗄️ Trello cache tables ready");
+
+// Migration: add attachment_count if missing (for existing DBs)
+try { db.exec("ALTER TABLE trello_cards ADD COLUMN attachment_count INTEGER DEFAULT 0"); } catch { /* already exists */ }
 
 // ─── Trello API helpers ──────────────────────────────────────────────
 const TRELLO_BASE = "https://api.trello.com/1";
@@ -78,12 +82,12 @@ export async function syncAllBoards(): Promise<{ boards: number; lists: number; 
     );
 
     const upsertCard = db.prepare(
-        `INSERT INTO trello_cards (id, list_id, board_id, name, desc, due, due_complete, labels, pos, url, synced_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO trello_cards (id, list_id, board_id, name, desc, due, due_complete, labels, pos, url, attachment_count, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        list_id=excluded.list_id, board_id=excluded.board_id, name=excluded.name, desc=excluded.desc,
        due=excluded.due, due_complete=excluded.due_complete, labels=excluded.labels,
-       pos=excluded.pos, url=excluded.url, synced_at=excluded.synced_at`
+       pos=excluded.pos, url=excluded.url, attachment_count=excluded.attachment_count, synced_at=excluded.synced_at`
     );
 
     // Clean stale cards before re-syncing (delete cards that no longer exist)
@@ -106,16 +110,17 @@ export async function syncAllBoards(): Promise<{ boards: number; lists: number; 
 
                 // 3. Fetch cards for this list
                 const cardsRes = await axios.get(`${TRELLO_BASE}/lists/${list.id}/cards`, {
-                    params: { key, token, fields: "name,desc,due,dueComplete,labels,pos,url" }
+                    params: { key, token, fields: "name,desc,due,dueComplete,labels,pos,url", attachments: "true", attachment_fields: "id" }
                 });
                 const cards = cardsRes.data as any[];
 
                 for (const card of cards) {
                     const labelStr = card.labels?.map((l: any) => l.name || l.color).join(", ") || "";
+                    const attachCount = card.attachments?.length || 0;
                     upsertCard.run(
                         card.id, list.id, board.id, card.name, card.desc || "",
                         card.due || null, card.dueComplete ? 1 : 0, labelStr,
-                        card.pos, card.url || "", now
+                        card.pos, card.url || "", attachCount, now
                     );
                     totalCards++;
                 }
@@ -166,7 +171,7 @@ export function getCachedCardsByList(boardId: string) {
     const result: { listName: string; cards: any[] }[] = [];
 
     const cardsByList = db.prepare(`
-    SELECT id, name, desc, due, due_complete, labels, url
+    SELECT id, name, desc, due, due_complete, labels, url, attachment_count
     FROM trello_cards
     WHERE list_id = ?
     ORDER BY pos
