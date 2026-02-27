@@ -29,6 +29,14 @@ registerSessionTools();
 import "./tools/recommendations.js";
 console.log("🔔 Smart Recommendations enabled");
 
+// 🔒 Safe Code Modification — Git-based code proposals with user approval
+import "./code-sandbox.js";
+console.log("🔒 Safe Code Modification enabled");
+
+// ⚙️ Dynamic Routine Manager — user-defined automated routines
+import "./routine-manager.js";
+console.log("⚙️ Dynamic Routine Manager enabled");
+
 // 🛡️ Encrypted Secrets — AES-256 encrypted API key storage
 import { registerSecretTools } from "./tools/secrets.js";
 registerSecretTools();

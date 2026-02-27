@@ -10,6 +10,8 @@ import { runCurationCycle, generateDailyReport } from "./skills/llm-tracker/inde
 import { runProactiveTriggers } from "./proactive-triggers.js";
 import { runDynamicTriggers, evolveTriggers } from "./trigger-manager.js";
 import { runSATC } from "./satc.js";
+import { runMorningBriefing, runCuriosityResearch, runDailyDigest, runSmartSuggestions } from "./proactive-engine.js";
+import { runDueRoutines } from "./routine-manager.js";
 
 /**
  * Scheduled Tasks System
@@ -43,27 +45,52 @@ export const scheduler = new Scheduler();
 // Morning Briefing (e.g., at 8 AM)
 // Satisfies: 1. Morning Briefing
 export function setupDefaultTasks(chatId: string) {
-    scheduler.schedule(`${chatId}_morning`, "0 8 * * *", async () => {
+    // ── Proactive Intelligence Engine ────────────────────────────────────
+    // Morning Briefing: rich AI dashboard at 8AM
+    scheduler.schedule(`${chatId}_pe_morning`, "0 8 * * *", async () => {
         try {
-            const briefing = await runAgent(chatId, "Generate a morning briefing with weather, news, and today's schedule.");
-            await sendTelegramMessage(chatId, briefing.text);
-            console.log(`🌞 Morning briefing sent for ${chatId}`);
+            await runMorningBriefing(chatId);
         } catch (err) {
-            console.error(`❌ Morning briefing error for ${chatId}:`, err);
+            console.error(`❌ Proactive morning briefing error for ${chatId}:`, err);
         }
     });
 
-    // Evening Recap (e.g., at 9 PM)
-    // Satisfies: 2. Evening Recap
-    scheduler.schedule(`${chatId}_evening`, "0 21 * * *", async () => {
+    // Curiosity Research: auto web search at 2PM weekdays
+    scheduler.schedule(`${chatId}_pe_research`, "0 14 * * 1-5", async () => {
         try {
-            const recap = await runAgent(chatId, "Generate an evening recap of today's tasks and messages.");
-            await sendTelegramMessage(chatId, recap.text);
-            console.log(`🌙 Evening recap sent for ${chatId}`);
+            await runCuriosityResearch(chatId);
         } catch (err) {
-            console.error(`❌ Evening recap error for ${chatId}:`, err);
+            console.error(`❌ Proactive curiosity research error for ${chatId}:`, err);
         }
     });
+
+    // Smart Suggestions: pattern-based at 5PM
+    scheduler.schedule(`${chatId}_pe_suggestions`, "0 17 * * *", async () => {
+        try {
+            await runSmartSuggestions(chatId);
+        } catch (err) {
+            console.error(`❌ Proactive smart suggestions error for ${chatId}:`, err);
+        }
+    });
+
+    // Daily Digest: day summary at 10PM
+    scheduler.schedule(`${chatId}_pe_digest`, "0 22 * * *", async () => {
+        try {
+            await runDailyDigest(chatId);
+        } catch (err) {
+            console.error(`❌ Proactive daily digest error for ${chatId}:`, err);
+        }
+    });
+
+    // Dynamic Routine Manager: check every 15 minutes
+    scheduler.schedule(`${chatId}_routines`, "*/15 * * * *", async () => {
+        try {
+            await runDueRoutines(chatId);
+        } catch (err) {
+            console.error(`❌ Routine manager error for ${chatId}:`, err);
+        }
+    });
+
 
     // ── Finance Scheduled Tasks ──────────────────────────────────────
     // Daily bill alerts at 9 AM — checks for bills due in the next 3 days

@@ -73,7 +73,16 @@ RULES:
 5. Always respond in Brazilian Portuguese (pt-BR) for explanations, but keep code in English.
 6. Keep explanations short and practical — focus on the code.
 7. If the task involves database queries, provide working SQL or code examples.
-8. [CRITICAL] You HAVE ACCESS to the Supabase database via 'supabase_query' (read) and 'supabase_insert' (write) tools. Use 'supabase_insert' to save new facts, memories, or judgments instead of writing JS/Python code that connects to Supabase directly.`;
+8. [CRITICAL] You HAVE ACCESS to the Supabase database via 'supabase_query' (read) and 'supabase_insert' (write) tools. Use 'supabase_insert' to save new facts, memories, or judgments instead of writing JS/Python code that connects to Supabase directly.
+
+CODE MODIFICATION WORKFLOW:
+9. [CRITICAL] To modify the Gravity Claw project code, you MUST use the sandbox tools:
+   - Use 'read_project_file' to read any source file first (e.g. read_project_file({path: "src/bot.ts"}))
+   - Use 'propose_code_change' to submit changes. This creates a Git branch, generates a diff, and sends approval buttons to the user via Telegram.
+   - NEVER modify files directly. All changes go through the proposal → approval → merge flow.
+   - The user will click ✅ Approve or ❌ Reject on the Telegram inline buttons.
+   - Use 'list_code_proposals' to check the status of pending/past proposals.
+10. When creating routines, use the 'create_routine' tool with a cron expression and action prompt.`;
 
 // ── Run Code Agent with Fallback Chain ────────────────────────────
 // Order: Puter (Primary) → Modal → OpenRouter

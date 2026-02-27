@@ -52,6 +52,40 @@ bot.command("think", async (ctx) => {
     }
 });
 
+// ─── Callback Query Handler (Inline Buttons) ────────────────────────
+bot.on("callback_query:data", async (ctx) => {
+    const data = ctx.callbackQuery.data;
+    const chatId = String(ctx.chat?.id || ctx.from.id);
+
+    try {
+        if (data.startsWith("code_approve:") || data.startsWith("code_reject:")) {
+            const proposalId = parseInt(data.split(":")[1], 10);
+            if (isNaN(proposalId)) {
+                await ctx.answerCallbackQuery({ text: "❌ ID inválido" });
+                return;
+            }
+
+            const { applyProposal, rejectProposal } = await import("./code-sandbox.js");
+
+            if (data.startsWith("code_approve:")) {
+                await ctx.answerCallbackQuery({ text: "✅ Aplicando..." });
+                await applyProposal(proposalId, chatId);
+            } else {
+                await ctx.answerCallbackQuery({ text: "🗑️ Rejeitado" });
+                await rejectProposal(proposalId, chatId);
+            }
+        } else if (data.startsWith("routine_")) {
+            // Future: routine manager callbacks
+            await ctx.answerCallbackQuery({ text: "🔧 Em breve..." });
+        } else {
+            await ctx.answerCallbackQuery({ text: "❓ Ação desconhecida" });
+        }
+    } catch (err) {
+        console.error("❌ Callback query error:", err);
+        await ctx.answerCallbackQuery({ text: "❌ Erro ao processar" });
+    }
+});
+
 // ─── Shared Response Sender ─────────────────────────────────────────
 /** Sends the agent result (text + media) to the user via Telegram. */
 async function sendAgentResult(ctx: any, chatId: string, result: { text: string; media?: any[] }): Promise<void> {

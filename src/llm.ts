@@ -122,6 +122,57 @@ function parseTextToToolCalls(text: string): { content: string, tool_calls?: Ope
     };
 }
 
+/**
+ * Lightweight chat for simple/robotic autonomous tasks.
+ * Uses Groq (fast, reliable, low hallucination) as primary.
+ * Use for: daily digest, routine execution, simple notifications.
+ * Does NOT support tools — text-only responses.
+ */
+export async function chatLight(
+    messages: Message[],
+    maxTokens: number = 1024
+): Promise<OpenAI.Chat.Completions.ChatCompletion | any> {
+    const sanitizedMessages = messages.map(msg => {
+        const { timestamp, ...rest } = msg as any;
+        return rest as Message;
+    });
+
+    // PRIMARY: Groq (fast, cheap, reliable for simple tasks)
+    try {
+        console.log(`🤖 [Light] Requesting Groq [${MODELS.groq.standard}]...`);
+        const response = await withRetry(
+            () => groqClient.chat.completions.create({
+                model: MODELS.groq.standard,
+                max_tokens: maxTokens,
+                messages: sanitizedMessages as any,
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ [Light] Groq response received`);
+        return response;
+    } catch (error) {
+        console.warn(`⚠️ [Light] Groq failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // FALLBACK: OpenRouter with a lighter model
+    try {
+        console.log(`🤖 [Light] Fallback to OpenRouter [google/gemini-2.0-flash-lite]...`);
+        const response = await withRetry(
+            () => openRouterClient.chat.completions.create({
+                model: "google/gemini-2.0-flash-lite",
+                max_tokens: maxTokens,
+                messages: sanitizedMessages,
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ [Light] OpenRouter lite response received`);
+        return response;
+    } catch (error) {
+        console.warn(`⚠️ [Light] OpenRouter lite failed: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+    }
+}
+
 export async function chat(
     messages: Message[]
 ): Promise<OpenAI.Chat.Completions.ChatCompletion | any> {
