@@ -100,10 +100,10 @@ registerTool({
     }
 });
 
-/** Get cards in a list */
+/** Get cards in a list — FULL details */
 registerTool({
     name: "trello_get_cards",
-    description: "Lista os cartões de uma lista específica.",
+    description: "Lista os cartões de uma lista específica com TODOS os detalhes: nome, descrição, prazo, labels, anexos e checklists.",
     parameters: {
         type: "object",
         properties: {
@@ -115,10 +115,39 @@ registerTool({
         try {
             const { key, token } = getAuth();
             const response = await axios.get(`${TRELLO_BASE}/lists/${listId}/cards`, {
-                params: { key, token, fields: "name,desc" }
+                params: {
+                    key, token,
+                    fields: "name,desc,due,dueComplete,labels,url,idChecklists",
+                    attachments: "true",
+                    attachment_fields: "name,url"
+                }
             });
-            const cards = response.data.map((c: any) => `- ${c.name} (ID: ${c.id}): ${c.desc || '(sem descrição)'}`).join("\n");
-            return `Cartões na lista:\n${cards}`;
+
+            if (response.data.length === 0) return "📋 Lista vazia — nenhum cartão encontrado.";
+
+            const cards = response.data.map((c: any) => {
+                let line = `**${c.name}** (ID: \`${c.id}\`)`;
+                if (c.due) {
+                    const dueDate = new Date(c.due).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+                    line += c.dueComplete ? ` ✅ ${dueDate}` : ` 📅 ${dueDate}`;
+                }
+                if (c.labels?.length > 0) {
+                    line += ` [${c.labels.map((l: any) => l.name || l.color).join(', ')}]`;
+                }
+                if (c.desc) {
+                    const truncDesc = c.desc.length > 120 ? c.desc.substring(0, 120) + '...' : c.desc;
+                    line += `\n  _${truncDesc}_`;
+                }
+                if (c.attachments?.length > 0) {
+                    line += `\n  📎 ${c.attachments.length} anexo(s): ${c.attachments.map((a: any) => a.name).join(', ')}`;
+                }
+                if (c.idChecklists?.length > 0) {
+                    line += `\n  ☑️ ${c.idChecklists.length} checklist(s)`;
+                }
+                return line;
+            }).join("\n\n");
+
+            return `📋 **Cartões na lista** (${response.data.length}):\n\n${cards}`;
         } catch (error: any) {
             if (axios.isAxiosError(error)) {
                 return `❌ Erro ao listar cartões: ${error.response?.status === 404 ? 'Lista não encontrada' : error.message}`;
@@ -298,7 +327,7 @@ registerTool({
             // List all boards as a fallback
             const boards = getCachedBoards();
             if (boards.length === 0) return "⚠️ Cache vazio. Aguarde a próxima sincronização ou reinicie o bot.";
-            return `Quadros disponíveis no cache:\n${boards.map((b: any) => `• ${b.name} (ID: ${b.id})`).join("\n")}\n\nUse o ID do quadro para listar as tarefas.`;
+            return `Quadros disponíveis no cache:\n${boards.map((b: any) => `• ${b.name} (ID: \`${b.id}\`)`).join("\n")}\n\nUse o ID do quadro para listar as tarefas.`;
         }
 
         const data = getCachedCardsByList(targetBoard);
@@ -314,10 +343,215 @@ registerTool({
                 const dueStr = card.due ? ` 📅 ${card.due.substring(0, 10)}` : "";
                 const doneStr = card.due_complete ? " ✅" : "";
                 const labelStr = card.labels ? ` [${card.labels}]` : "";
-                output += `• ${card.name}${dueStr}${doneStr}${labelStr}\n`;
+                const descStr = card.desc ? ` — _${card.desc.substring(0, 80)}${card.desc.length > 80 ? '...' : ''}_` : "";
+                const attachStr = card.attachment_count > 0 ? ` 📎${card.attachment_count}` : "";
+                output += `• ${card.name} (\`${card.id}\`)${dueStr}${doneStr}${labelStr}${attachStr}${descStr}\n`;
             }
             output += "\n";
         }
         return output.trim();
+    }
+});
+
+// ─── NEW TOOLS ───────────────────────────────────────────────────────
+
+/** Archive a card */
+registerTool({
+    name: "trello_archive_card",
+    description: "Arquiva (fecha) um cartão do Trello. O cartão não é deletado, apenas removido da visualização do quadro.",
+    parameters: {
+        type: "object",
+        properties: {
+            cardId: { type: "string", description: "O ID do cartão" }
+        },
+        required: ["cardId"]
+    },
+    execute: async ({ cardId }) => {
+        try {
+            const { key, token } = getAuth();
+            await axios.put(`${TRELLO_BASE}/cards/${cardId}`, null, {
+                params: { key, token, closed: true }
+            });
+            return `✅ Cartão arquivado com sucesso.`;
+        } catch (error: any) {
+            return `❌ Erro ao arquivar cartão: ${error.message}`;
+        }
+    }
+});
+
+/** Update card fields (name, description, due) */
+registerTool({
+    name: "trello_update_card",
+    description: "Atualiza campos de um cartão (nome, descrição e/ou prazo). Informe apenas os campos que deseja alterar.",
+    parameters: {
+        type: "object",
+        properties: {
+            cardId: { type: "string", description: "O ID do cartão" },
+            name: { type: "string", description: "Novo título do cartão (opcional)" },
+            desc: { type: "string", description: "Nova descrição do cartão (opcional)" },
+            due: { type: "string", description: "Novo prazo ISO (opcional, ex: 2025-03-15T18:00:00Z)" }
+        },
+        required: ["cardId"]
+    },
+    execute: async ({ cardId, name, desc, due }) => {
+        try {
+            const { key, token } = getAuth();
+            const params: any = { key, token };
+            if (name !== undefined) params.name = name;
+            if (desc !== undefined) params.desc = desc;
+            if (due !== undefined) params.due = due;
+
+            const response = await axios.put(`${TRELLO_BASE}/cards/${cardId}`, null, { params });
+            const updated = [];
+            if (name) updated.push(`nome: "${response.data.name}"`);
+            if (desc !== undefined) updated.push(`descrição atualizada`);
+            if (due) updated.push(`prazo: ${due}`);
+
+            return `✅ Cartão atualizado: ${updated.join(', ')}`;
+        } catch (error: any) {
+            return `❌ Erro ao atualizar cartão: ${error.message}`;
+        }
+    }
+});
+
+/** Get full card details (desc, checklists, attachments, comments) */
+registerTool({
+    name: "trello_get_card_details",
+    description: "Obtém TODOS os detalhes de um cartão: descrição completa, checklists com itens, anexos com URLs, e comentários recentes. Use quando precisar ver a informação completa de um cartão.",
+    parameters: {
+        type: "object",
+        properties: {
+            cardId: { type: "string", description: "O ID do cartão" }
+        },
+        required: ["cardId"]
+    },
+    execute: async ({ cardId }) => {
+        try {
+            const { key, token } = getAuth();
+
+            // Fetch card + checklists + attachments + recent comments in parallel
+            const [cardRes, checklistsRes, attachmentsRes, commentsRes] = await Promise.all([
+                axios.get(`${TRELLO_BASE}/cards/${cardId}`, {
+                    params: { key, token, fields: "name,desc,due,dueComplete,labels,url,idList,idBoard" }
+                }),
+                axios.get(`${TRELLO_BASE}/cards/${cardId}/checklists`, {
+                    params: { key, token }
+                }),
+                axios.get(`${TRELLO_BASE}/cards/${cardId}/attachments`, {
+                    params: { key, token, fields: "name,url,date" }
+                }),
+                axios.get(`${TRELLO_BASE}/cards/${cardId}/actions`, {
+                    params: { key, token, filter: "commentCard", limit: 5 }
+                })
+            ]);
+
+            const card = cardRes.data;
+            let output = `📋 **${card.name}**\n`;
+            output += `🔗 ${card.url}\n\n`;
+
+            // Due date
+            if (card.due) {
+                const dueDate = new Date(card.due).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+                output += card.dueComplete ? `✅ Prazo: ${dueDate} (concluído)\n` : `📅 Prazo: ${dueDate}\n`;
+            }
+
+            // Labels
+            if (card.labels?.length > 0) {
+                output += `🏷️ Labels: ${card.labels.map((l: any) => l.name || l.color).join(', ')}\n`;
+            }
+
+            // Description
+            if (card.desc) {
+                output += `\n📝 **Descrição:**\n${card.desc}\n`;
+            }
+
+            // Checklists
+            const checklists = checklistsRes.data as any[];
+            if (checklists.length > 0) {
+                output += `\n☑️ **Checklists (${checklists.length}):**\n`;
+                for (const cl of checklists) {
+                    const total = cl.checkItems?.length || 0;
+                    const done = cl.checkItems?.filter((i: any) => i.state === 'complete').length || 0;
+                    output += `  **${cl.name}** (${done}/${total})\n`;
+                    for (const item of (cl.checkItems || [])) {
+                        const check = item.state === 'complete' ? '✅' : '⬜';
+                        output += `    ${check} ${item.name}\n`;
+                    }
+                }
+            }
+
+            // Attachments
+            const attachments = attachmentsRes.data as any[];
+            if (attachments.length > 0) {
+                output += `\n📎 **Anexos (${attachments.length}):**\n`;
+                for (const att of attachments) {
+                    output += `  • [${att.name}](${att.url})\n`;
+                }
+            }
+
+            // Comments
+            const comments = commentsRes.data as any[];
+            if (comments.length > 0) {
+                output += `\n💬 **Comentários recentes (${comments.length}):**\n`;
+                for (const cm of comments) {
+                    const author = cm.memberCreator?.fullName || 'Desconhecido';
+                    const date = new Date(cm.date).toLocaleDateString('pt-BR');
+                    const text = cm.data?.text || '';
+                    output += `  • _${author}_ (${date}): ${text.substring(0, 200)}${text.length > 200 ? '...' : ''}\n`;
+                }
+            }
+
+            return output.trim();
+        } catch (error: any) {
+            if (axios.isAxiosError(error) && error.response?.status === 404) {
+                return `❌ Cartão não encontrado. Verifique o ID: ${cardId}`;
+            }
+            return `❌ Erro ao buscar detalhes: ${error.message}`;
+        }
+    }
+});
+
+/** Search cards by name across all boards */
+registerTool({
+    name: "trello_search_cards",
+    description: "Busca cartões pelo nome em todos os quadros do Trello. Útil quando você sabe o nome do cartão mas não o ID.",
+    parameters: {
+        type: "object",
+        properties: {
+            query: { type: "string", description: "Texto para buscar nos nomes dos cartões" }
+        },
+        required: ["query"]
+    },
+    execute: async ({ query }) => {
+        try {
+            const { key, token } = getAuth();
+            const response = await axios.get(`${TRELLO_BASE}/search`, {
+                params: {
+                    key, token,
+                    query,
+                    modelTypes: "cards",
+                    card_fields: "name,desc,due,dueComplete,url,idBoard,idList",
+                    cards_limit: 10
+                }
+            });
+
+            const cards = response.data.cards as any[];
+            if (!cards || cards.length === 0) return `🔍 Nenhum cartão encontrado para: "${query}"`;
+
+            const results = cards.map((c: any) => {
+                let line = `• **${c.name}** (ID: \`${c.id}\`)`;
+                if (c.due) {
+                    const dueDate = new Date(c.due).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+                    line += c.dueComplete ? ` ✅ ${dueDate}` : ` 📅 ${dueDate}`;
+                }
+                if (c.desc) line += `\n  _${c.desc.substring(0, 80)}${c.desc.length > 80 ? '...' : ''}_`;
+                line += `\n  🔗 ${c.url}`;
+                return line;
+            }).join("\n\n");
+
+            return `🔍 **Resultados para "${query}"** (${cards.length}):\n\n${results}`;
+        } catch (error: any) {
+            return `❌ Erro na busca: ${error.message}`;
+        }
     }
 });
