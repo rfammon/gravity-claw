@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { runAgent } from "./agent.js";
 import { saveMessage } from "./db-provider.js";
-import { sendTelegramMessage, sendTelegramPhoto } from "./bot.js";
+import { sendTelegramMessage, sendTelegramPhoto } from "./telegram-utils.js";
 import { generateDailyJudgment, generateWeeklyJudgment } from "./judgment.js";
 import * as db from "./finance/finance-db.js";
 import * as calc from "./finance/finance-calculator.js";
