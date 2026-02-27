@@ -17,7 +17,7 @@ import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
 import { chat, type Message } from "./llm.js";
-import { sendTelegramMessage } from "./bot.js";
+import { sendTelegramMessage } from "./telegram-utils.js";
 import { getTopTopics, getActiveHours, getPatterns, detectTopicSilence } from "./recommendations.js";
 import { getChatHistory } from "./db-provider.js";
 

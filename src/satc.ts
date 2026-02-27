@@ -11,7 +11,7 @@
  */
 
 import { runAgent } from "./agent.js";
-import { sendTelegramMessage } from "./bot.js";
+import { sendTelegramMessage } from "./telegram-utils.js";
 import { getTopTopics, getPatterns } from "./recommendations.js";
 
 /** Tópicos que o SATC considera de alta prioridade para Rafael */

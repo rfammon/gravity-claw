@@ -10,7 +10,7 @@
  *  - Finance Gap Check: dias sem registro de gastos em dia útil
  */
 
-import { sendTelegramMessage } from "./bot.js";
+import { sendTelegramMessage } from "./telegram-utils.js";
 import { detectTopicSilence } from "./recommendations.js";
 import { runAgent } from "./agent.js";
 import { getPatterns } from "./recommendations.js";
