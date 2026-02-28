@@ -68,6 +68,13 @@ const ocrSpaceApiKey = optionalEnv("OCR_SPACE_API_KEY");
 const masterKey = optionalEnv("MASTER_KEY");
 const puterDefaultModel = optionalEnv("PUTER_DEFAULT_MODEL", "moonshotai/kimi-k2.5");
 
+console.log("\n📋 Google Calendar:");
+const googleCalendarToken = optionalEnv("GOOGLE_CALENDAR_TOKEN");
+const googleCalendarRefreshToken = optionalEnv("GOOGLE_CALENDAR_REFRESH_TOKEN");
+const googleClientId = optionalEnv("GOOGLE_CLIENT_ID");
+const googleClientSecret = optionalEnv("GOOGLE_CLIENT_SECRET");
+const googleCalendarId = optionalEnv("GOOGLE_CALENDAR_ID", "primary");
+
 console.log("\n📋 Parsed values:");
 const allowedUserIds = parseUserIds(allowedUserIdsRaw);
 console.log(`   ALLOWED_USER_IDS: [${allowedUserIds.join(", ")}]`);
@@ -110,6 +117,13 @@ export const config = {
 
     // ── Puter Token ─────────────────────────────────────────
     puterToken: process.env.PUTER_TOKEN || "",
+
+    // ── Google Calendar ─────────────────────────────────────
+    googleCalendarToken,
+    googleCalendarRefreshToken,
+    googleClientId,
+    googleClientSecret,
+    googleCalendarId,
 } as const;
 
 // Validation
@@ -125,4 +139,9 @@ if (config.supabaseUrl && config.supabaseServiceKey) {
     console.log("☁️  Supabase: ENABLED");
 } else {
     console.log("💾 Supabase: DISABLED (using local SQLite)");
+}
+if (config.googleCalendarToken) {
+    console.log("📅 Google Calendar: ENABLED");
+} else {
+    console.log("📅 Google Calendar: DISABLED (set GOOGLE_CALENDAR_TOKEN)");
 }

@@ -1,15 +1,31 @@
 import { addReminder, getPendingReminders, updateReminderStatus } from "./db-provider.js";
 import { sendTelegramMessage } from "./telegram-utils.js";
 import { porter } from "./porter-agent.js";
+import { isCalendarConfigured, createCalendarEvent } from "./google-calendar.js";
 
 /**
  * Reminders Manager
- * Logic for adding and polling reminders.
+ * Logic for adding, polling, and calendar-syncing reminders.
  */
 
 export async function createReminder(chatId: string, userId: number, text: string, remindAt: Date) {
     console.log(`📝 Creating reminder for ${chatId} at ${remindAt.toISOString()}: ${text}`);
     await addReminder(chatId, userId, text, remindAt);
+
+    // Auto-sync with Google Calendar (best-effort, never block reminder creation)
+    if (isCalendarConfigured()) {
+        try {
+            const event = await createCalendarEvent({
+                summary: `🔔 ${text}`,
+                description: `Lembrete do Megamind (chat: ${chatId})`,
+                start: remindAt,
+                durationMinutes: 30,
+            });
+            console.log(`📅 Reminder synced to Calendar: ${event.id}`);
+        } catch (calErr) {
+            console.warn(`⚠️ Calendar sync failed (reminder still created):`, calErr instanceof Error ? calErr.message : calErr);
+        }
+    }
 }
 
 export async function pollReminders() {

@@ -23,7 +23,8 @@ export function registerCoreMemoryTools(): void {
             },
             required: ["content", "category"]
         },
-        execute: async ({ content, category }, userId) => {
+        execute: async ({ content, category }, ctx) => {
+            const userId = ctx?.userId || ctx?.chatId;
             if (!userId) {
                 return JSON.stringify({ success: false, error: "Missing user authentication." });
             }
@@ -56,7 +57,8 @@ export function registerCoreMemoryTools(): void {
             },
             required: ["query"]
         },
-        execute: async ({ query }, userId) => {
+        execute: async ({ query }, ctx) => {
+            const userId = ctx?.userId || ctx?.chatId;
             if (!userId) {
                 return JSON.stringify({ success: false, error: "Missing user authentication." });
             }

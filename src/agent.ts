@@ -19,7 +19,8 @@ export interface AgentResult {
 
 export async function runAgent(
   chatId: string,
-  userMessage: string
+  userMessage: string,
+  userId?: number
 ): Promise<AgentResult> {
   // 0. Track behavior patterns for proactive recommendations
   analyzeMessageForPatterns(chatId, userMessage);
@@ -101,7 +102,7 @@ FORMATTING:
     messages.push(assistantMessage as Message);
 
     const toolCalls = (assistantMessage.tool_calls ?? []).filter(
-      (tc): tc is ChatCompletionMessageFunctionToolCall =>
+      (tc: any): tc is ChatCompletionMessageFunctionToolCall =>
         tc.type === "function"
     );
 
@@ -136,7 +137,7 @@ FORMATTING:
         resultText = JSON.stringify({ error: "Unknown tool: " + fnName });
       } else {
         try {
-          const rawResult = await tool.execute(fnArgs);
+          const rawResult = await tool.execute(fnArgs, { chatId, userId: userId || chatId });
           if (typeof rawResult === 'string') {
             resultText = rawResult;
           } else {

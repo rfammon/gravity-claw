@@ -192,7 +192,7 @@ export async function runCodeAgent(task: string): Promise<string> {
                         resultText = JSON.stringify({ error: "Unknown tool: " + fnName });
                     } else {
                         try {
-                            const rawResult = await tool.execute(fnArgs);
+                            const rawResult = await tool.execute(fnArgs, { chatId: 'code-agent', userId: 'code-agent' });
                             resultText = typeof rawResult === 'string' ? rawResult : rawResult.text;
                         } catch (err) {
                             resultText = JSON.stringify({
@@ -268,7 +268,7 @@ export async function runCodeAgent(task: string): Promise<string> {
                     resultText = JSON.stringify({ error: "Unknown tool: " + fnName });
                 } else {
                     try {
-                        const rawResult = await tool.execute(fnArgs);
+                        const rawResult = await tool.execute(fnArgs, { chatId: 'code-agent', userId: 'code-agent' });
                         resultText = typeof rawResult === 'string' ? rawResult : rawResult.text;
                     } catch (err) {
                         resultText = JSON.stringify({
