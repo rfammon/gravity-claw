@@ -68,6 +68,11 @@ const ocrSpaceApiKey = optionalEnv("OCR_SPACE_API_KEY");
 const masterKey = optionalEnv("MASTER_KEY");
 const puterDefaultModel = optionalEnv("PUTER_DEFAULT_MODEL", "moonshotai/kimi-k2.5");
 
+console.log("\n📋 OpenCode Zen:");
+const openCodeApiKey = optionalEnv("OPENCODE_API_KEY");
+const openCodeBaseUrl = optionalEnv("OPENCODE_BASE_URL", "https://api.opencode.ai/v1");
+const openCodeDefaultModel = optionalEnv("OPENCODE_DEFAULT_MODEL", "opencode/minimax-m2.5-free");
+
 console.log("\n📋 Google Calendar:");
 const googleCalendarToken = optionalEnv("GOOGLE_CALENDAR_TOKEN");
 const googleCalendarRefreshToken = optionalEnv("GOOGLE_CALENDAR_REFRESH_TOKEN");
@@ -114,6 +119,11 @@ export const config = {
 
     // ── Puter (Code Agent Fallback) ────────────────────────
     puterDefaultModel,
+
+    // ── OpenCode Zen ────────────────────────────────────────
+    openCodeApiKey,
+    openCodeBaseUrl,
+    openCodeDefaultModel,
 
     // ── Puter Token ─────────────────────────────────────────
     puterToken: process.env.PUTER_TOKEN || "",

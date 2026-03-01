@@ -25,6 +25,11 @@ const groqClient = new Groq({
     apiKey: config.groqApiKey,
 });
 
+const openCodeClient = new OpenAI({
+    baseURL: config.openCodeBaseUrl,
+    apiKey: config.openCodeApiKey || "sk-local-stub", // Allow local without key
+});
+
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
@@ -38,6 +43,9 @@ const MODELS = {
     },
     puter: {
         standard: config.puterDefaultModel || "moonshotai/kimi-k2.5",
+    },
+    opencode: {
+        standard: config.openCodeDefaultModel || "opencode/minimax-m2.5-free",
     },
     ollama: {
         simple: "qwen2.5:0.5b",
@@ -233,12 +241,31 @@ export async function chat(
         console.log(`✅ LLM Response received from Groq in ${Date.now() - groqStartTime}ms`);
         return response;
     } catch (error) {
-        console.warn(`⚠️ Groq failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal...`);
+        console.warn(`⚠️ Groq failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenCode...`);
     }
 
-    // ── FALLBACK 2: MODAL ──────────────────────────────────────
+    // ── FALLBACK 2: OPENCODE ZEN ───────────────────────────────
+    if (config.openCodeApiKey) {
+        try {
+            console.log(`🤖 Requesting LLM (Fallback 2: OpenCode [${MODELS.opencode.standard}])...`);
+            const openCodeStartTime = Date.now();
+            const response = await withRetry(
+                () => openCodeClient.chat.completions.create({
+                    model: MODELS.opencode.standard,
+                    ...callArgs
+                }),
+                { maxRetries: 2 }
+            );
+            console.log(`✅ LLM Response received from OpenCode in ${Date.now() - openCodeStartTime}ms`);
+            return response;
+        } catch (error) {
+            console.warn(`⚠️ OpenCode failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal...`);
+        }
+    }
+
+    // ── FALLBACK 3: MODAL ──────────────────────────────────────
     try {
-        console.log(`🤖 Requesting LLM (Fallback 2: Modal [${MODELS.modal.standard}])...`);
+        console.log(`🤖 Requesting LLM (Fallback 3: Modal [${MODELS.modal.standard}])...`);
         const modalStartTime = Date.now();
         const response = await withRetry(
             () => modalClient.chat.completions.create({
