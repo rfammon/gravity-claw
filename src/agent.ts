@@ -95,8 +95,11 @@ FORMATTING:
     iterations++;
     const response = await chat(messages);
 
-    const choice = response.choices[0];
-    if (!choice) return { text: "\u26a0\ufe0f No response from the model.", media: [] };
+    const choice = response?.choices?.[0];
+    if (!choice) {
+      console.error("⚠️ Invalid or empty response from the model. Raw response:", JSON.stringify(response).substring(0, 500));
+      return { text: "\u26a0\ufe0f No valid response from the model. Please check the logs.", media: [] };
+    }
 
     const assistantMessage = choice.message;
     messages.push(assistantMessage as Message);
