@@ -45,7 +45,7 @@ const MODELS = {
         standard: config.puterDefaultModel || "moonshotai/kimi-k2.5",
     },
     opencode: {
-        standard: config.openCodeDefaultModel || "glm-5-free",
+        standard: config.openCodeDefaultModel || "big-pickle",
     },
     ollama: {
         simple: "qwen2.5:0.5b",
