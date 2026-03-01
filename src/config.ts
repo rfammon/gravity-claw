@@ -70,7 +70,7 @@ const puterDefaultModel = optionalEnv("PUTER_DEFAULT_MODEL", "moonshotai/kimi-k2
 
 console.log("\n📋 OpenCode Zen:");
 const openCodeApiKey = optionalEnv("OPENCODE_API_KEY");
-const openCodeBaseUrl = optionalEnv("OPENCODE_BASE_URL", "https://api.opencode.ai/v1");
+const openCodeBaseUrl = optionalEnv("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1");
 const openCodeDefaultModel = optionalEnv("OPENCODE_DEFAULT_MODEL", "opencode/minimax-m2.5-free");
 
 console.log("\n📋 Google Calendar:");
