@@ -33,7 +33,7 @@ const openCodeClient = new OpenAI({
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
-        standard: "google/gemini-2.0-flash-lite-preview-02-05:free", // Correct ID (OpenRouter usually maps without the :free suffix if free is active or we use the base one)
+        standard: "google/gemma-3-27b-it:free", // Verified free model
     },
     groq: {
         standard: "llama-3.3-70b-versatile",
@@ -148,11 +148,17 @@ export async function chatLight(
     // PRIMARY: Groq (fast, cheap, reliable for simple tasks)
     try {
         console.log(`🤖 [Light] Requesting Groq [${MODELS.groq.standard}]...`);
+        // Limit history for Groq to avoid 12k TPM limit
+        let groqMessages = sanitizedMessages;
+        if (sanitizedMessages.length > 12) {
+            groqMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
+        }
+
         const response = await withRetry(
             () => groqClient.chat.completions.create({
                 model: MODELS.groq.standard,
                 max_tokens: maxTokens,
-                messages: sanitizedMessages as any,
+                messages: groqMessages as any,
             }),
             { maxRetries: 2 }
         );
@@ -231,10 +237,19 @@ export async function chat(
     try {
         console.log(`🤖 Requesting LLM (Fallback 1: Groq [${MODELS.groq.standard}])...`);
         const groqStartTime = Date.now();
+
+        // Limit history for Groq to avoid 12k TPM limit (typically 8-12 messages max)
+        let groqMessages = sanitizedMessages;
+        if (sanitizedMessages.length > 15) {
+            groqMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
+        }
+
+        const groqCallArgs = { ...callArgs, messages: groqMessages };
+
         const response = await withRetry(
             () => groqClient.chat.completions.create({
                 model: MODELS.groq.standard,
-                ...callArgs
+                ...groqCallArgs
             }),
             { maxRetries: 2 }
         );
