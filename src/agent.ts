@@ -129,7 +129,15 @@ FORMATTING:
       const fnName = toolCall.function.name;
       // Track tool usage for interaction log
       if (!calledTools.includes(fnName)) calledTools.push(fnName);
-      const fnArgs = JSON.parse(toolCall.function.arguments || "{}");
+      let fnArgs: Record<string, unknown>;
+      try {
+        fnArgs = JSON.parse(toolCall.function.arguments || "{}");
+      } catch (parseErr) {
+        console.warn(`⚠️ Failed to parse tool args for ${fnName}:`, toolCall.function.arguments);
+        const errorResult = JSON.stringify({ error: `Invalid tool arguments JSON: ${String(toolCall.function.arguments).substring(0, 200)}` });
+        messages.push({ role: "tool" as const, tool_call_id: toolCall.id, content: errorResult });
+        continue;
+      }
       const tool = getTool(fnName);
 
       let resultText: string;

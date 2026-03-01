@@ -112,6 +112,16 @@ export function registerSupabaseTools(): void {
             try {
                 const tableName = String(table);
 
+                // Security: restrict writable tables to prevent LLM data corruption
+                const WRITABLE_TABLES = new Set([
+                    "expenses_one_time", "expenses_recurring_fixed", "expenses_recurring_variable",
+                    "subscriptions", "financial_projects", "project_contributions", "financial_alerts",
+                    "financial_profile", "interaction_log"
+                ]);
+                if (!WRITABLE_TABLES.has(tableName)) {
+                    return JSON.stringify({ success: false, error: `Table '${tableName}' is not writable via this tool. Writable tables: ${[...WRITABLE_TABLES].join(", ")}` });
+                }
+
                 // Execute the insert
                 const { data: result, error } = await getClient()
                     .from(tableName)

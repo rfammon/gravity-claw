@@ -9,9 +9,13 @@ import * as path from "path";
  * Satisfies: 3. Encrypted Secrets
  */
 const ALGORITHM = "aes-256-cbc";
-const MASTER_KEY = process.env.MASTER_KEY || "your-fallback-master-key-32chars!!"; // Must be 32 bytes
+const MASTER_KEY = process.env.MASTER_KEY;
+if (!MASTER_KEY) {
+    console.warn("⚠️ MASTER_KEY env var not set — security.ts encrypt/decrypt functions will be unavailable. Set a 32-char key for encryption.");
+} // Must be 32 bytes
 
 export function encrypt(text: string): string {
+    if (!MASTER_KEY) throw new Error("Cannot encrypt: MASTER_KEY env var is not set.");
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(ALGORITHM, Buffer.from(MASTER_KEY), iv);
     let encrypted = cipher.update(text);
@@ -20,6 +24,7 @@ export function encrypt(text: string): string {
 }
 
 export function decrypt(text: string): string {
+    if (!MASTER_KEY) throw new Error("Cannot decrypt: MASTER_KEY env var is not set.");
     const [ivHex, encryptedHex] = text.split(":");
     const iv = Buffer.from(ivHex, "hex");
     const encrypted = Buffer.from(encryptedHex, "hex");

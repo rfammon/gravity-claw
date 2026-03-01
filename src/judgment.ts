@@ -1,5 +1,5 @@
 import { getMemoriesSince, saveJudgment, getJudgmentsSince } from "./db-provider.js";
-import { chat, type Message } from "./llm.js";
+import { chatLight, type Message } from "./llm.js";
 
 function getIsoDateDaysAgo(days: number): string {
     const d = new Date();
@@ -30,7 +30,7 @@ Analyse the conversation log below from the last 24 hours. Write a short, critic
         }
     ];
 
-    const response = await chat(promptMessages);
+    const response = await chatLight(promptMessages);
     const opinion = response.choices[0]?.message.content?.trim();
 
     if (opinion) {
@@ -61,7 +61,7 @@ Review your daily diary entries from the past week about this user. Synthesize t
         }
     ];
 
-    const response = await chat(promptMessages);
+    const response = await chatLight(promptMessages);
     const opinion = response.choices[0]?.message.content?.trim();
 
     if (opinion) {

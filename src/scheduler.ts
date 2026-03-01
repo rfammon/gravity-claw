@@ -12,6 +12,7 @@ import { runDynamicTriggers, evolveTriggers } from "./trigger-manager.js";
 import { runSATC } from "./satc.js";
 import { runMorningBriefing, runCuriosityResearch, runDailyDigest, runSmartSuggestions } from "./proactive-engine.js";
 import { runDueRoutines } from "./routine-manager.js";
+import { pollReminders } from "./reminders.js";
 
 /**
  * Scheduled Tasks System
@@ -200,23 +201,6 @@ export function setupDefaultTasks(chatId: string) {
         }
     });
 
-    // Morning Dashboard Briefing at 07:30
-    scheduler.schedule(`${chatId}_morning_dashboard`, "30 7 * * *", async () => {
-        try {
-            const prompt = `Gere um DASHBOARD PROATIVO matinal para o Rafael. Inclua:
-1. Saudação dramática no estilo Megamente
-2. Mini-resumo de tarefas urgentes (use trello_list_tasks se necessário)
-3. Lembretes financeiros se houver contas próximas (finance_calendar)
-4. Uma dica motivacional CURTA sobre seus objetivos principais (Petrobras, Gravity Claw)
-Formate de forma concisa com emojis. Máximo 15 linhas.`;
-            const result = await runAgent(chatId, prompt);
-            await sendTelegramMessage(chatId, result.text);
-            console.log(`☀️ Morning dashboard sent for ${chatId}`);
-        } catch (err) {
-            console.error(`❌ Morning dashboard error for ${chatId}:`, err);
-        }
-    });
-
     // SATC — Sub-Agent for Critical Tasks at 7 PM on weekdays
     scheduler.schedule(`${chatId}_satc`, "0 19 * * 1-5", async () => {
         try {
@@ -229,6 +213,15 @@ Formate de forma concisa com emojis. Máximo 15 linhas.`;
 
 // ── Global System Tasks (Run exactly once, regardless of user count) ──
 export function setupGlobalTasks() {
+    // ⏰ Reminder Polling: check every 60 seconds for due reminders
+    scheduler.schedule("global_reminder_poll", "* * * * *", async () => {
+        try {
+            await pollReminders();
+        } catch (err) {
+            console.error(`❌ Reminder poll error:`, err);
+        }
+    });
+
     // LLM Tracker: Curate new tools/models every 2 hours
     scheduler.schedule("global_llm_tracker_curate", "0 */2 * * *", async () => {
         try {
