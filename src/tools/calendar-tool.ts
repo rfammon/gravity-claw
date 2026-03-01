@@ -14,6 +14,55 @@ import {
     listCalendars,
 } from "../google-calendar.js";
 
+/**
+ * Parse flexible date/time inputs:
+ * - Relative: "+5 minutes", "+2 hours", "+1 day"
+ * - Natural: "amanhã", "tomorrow"
+ * - ISO 8601: "2026-03-01T14:00:00-03:00"
+ * - ISO without timezone: appends -03:00 (BRT)
+ */
+function parseFlexibleDate(input: string): Date {
+    const raw = String(input).trim();
+    const lower = raw.toLowerCase();
+
+    // Relative time: +N minutes/hours/days
+    if (lower.startsWith("+")) {
+        const match = lower.match(/\d+/);
+        if (!match) throw new Error("Quantidade inválida no tempo relativo.");
+        const amount = parseInt(match[0]);
+        const unit = lower.match(/min/i) ? 60 * 1000 :
+            lower.match(/hour|hora/i) ? 60 * 60 * 1000 :
+                lower.match(/day|dia/i) ? 24 * 60 * 60 * 1000 :
+                    lower.match(/sec|seg/i) ? 1000 : 0;
+        if (unit === 0) throw new Error("Unidade de tempo não reconhecida. Use minutes, hours, ou days.");
+        return new Date(Date.now() + amount * unit);
+    }
+
+    // Natural language
+    if (lower === "amanhã" || lower === "tomorrow") {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        d.setHours(9, 0, 0, 0);
+        return d;
+    }
+    if (lower === "hoje" || lower === "today" || lower === "now" || lower === "agora") {
+        return new Date();
+    }
+
+    // ISO 8601 – ensure timezone offset
+    let dateStr = raw;
+    const hasTimezone = /(Z|[+-]\d{2}:?\d{2})$/i.test(dateStr);
+    if (!hasTimezone && dateStr.includes("T")) {
+        dateStr += "-03:00";
+    }
+
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime())) {
+        throw new Error(`Formato de data inválido: "${input}". Use ISO 8601 (ex: 2026-03-01T14:00:00-03:00) ou tempo relativo (ex: +30 minutes).`);
+    }
+    return parsed;
+}
+
 export function registerCalendarTools(): void {
     // ── calendar_events ──────────────────────────────────────────
     registerTool({
@@ -80,7 +129,8 @@ Ou use from/to (ISO 8601) para datas específicas.`,
     registerTool({
         name: "calendar_create",
         description: `Cria um evento no Google Calendar. Use para agendar reuniões, compromissos, etc.
-O evento aparecerá no calendário do usuário. Suporta Google Meet link.`,
+O evento aparecerá no calendário do usuário. Suporta Google Meet link.
+Formatos aceitos para 'start': ISO 8601 ('2026-03-01T14:00:00-03:00'), relativo ('+30 minutes', '+2 hours'), ou natural ('amanhã').`,
         parameters: {
             type: "object",
             properties: {
@@ -90,7 +140,7 @@ O evento aparecerá no calendário do usuário. Suporta Google Meet link.`,
                 },
                 start: {
                     type: "string",
-                    description: "Horário de início (ISO 8601 com fuso): '2026-03-01T14:00:00-03:00'",
+                    description: "Horário de início. Aceita: ISO 8601 ('2026-03-01T14:00:00-03:00'), relativo ('+5 minutes', '+2 hours', '+1 day'), ou natural ('amanhã', 'tomorrow').",
                 },
                 duration_minutes: {
                     type: "number",
@@ -128,10 +178,16 @@ O evento aparecerá no calendário do usuário. Suporta Google Meet link.`,
                     ? String(input.attendees).split(",").map((e) => e.trim()).filter(Boolean)
                     : undefined;
 
+                // Parse flexible date formats
+                const startDate = parseFlexibleDate(String(input.start));
+                const endDate = input.end ? parseFlexibleDate(String(input.end)) : undefined;
+
+                console.log(`[calendar_create] Parsed start: ${startDate.toISOString()}, raw: "${input.start}"`);
+
                 const event = await createCalendarEvent({
                     summary: String(input.title),
-                    start: String(input.start),
-                    end: input.end ? String(input.end) : undefined,
+                    start: startDate,
+                    end: endDate,
                     durationMinutes: (input.duration_minutes as number) || 60,
                     description: input.description ? String(input.description) : undefined,
                     location: input.location ? String(input.location) : undefined,
@@ -243,7 +299,7 @@ Ou use diretamente para criar um lembrete que já aparece no Google Calendar.`,
                 },
                 remind_at: {
                     type: "string",
-                    description: "Data/hora do lembrete (ISO 8601 com fuso: '2026-03-01T14:00:00-03:00')",
+                    description: "Data/hora do lembrete. Aceita: ISO 8601 ('2026-03-01T14:00:00-03:00'), relativo ('+5 minutes'), ou natural ('amanhã').",
                 },
                 duration_minutes: {
                     type: "number",
@@ -257,10 +313,13 @@ Ou use diretamente para criar um lembrete que já aparece no Google Calendar.`,
                 return JSON.stringify({ success: false, error: "Google Calendar não configurado." });
             }
             try {
+                const parsedDate = parseFlexibleDate(String(input.remind_at));
+                console.log(`[calendar_sync_reminder] Parsed remind_at: ${parsedDate.toISOString()}, raw: "${input.remind_at}"`);
+
                 const event = await createCalendarEvent({
                     summary: `🔔 ${input.text}`,
                     description: "Lembrete criado pelo Megamind",
-                    start: String(input.remind_at),
+                    start: parsedDate,
                     durationMinutes: (input.duration_minutes as number) || 30,
                 });
 
