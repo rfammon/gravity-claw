@@ -305,9 +305,16 @@ export async function createCalendarEvent(event: {
     const tz = calendarConfig?.timeZone || "America/Sao_Paulo";
 
     const startDate = event.start instanceof Date ? event.start : new Date(event.start);
+    if (isNaN(startDate.getTime())) {
+        throw new Error(`Invalid start date: "${event.start}". Use ISO 8601 format (e.g. 2026-03-01T14:00:00-03:00) or pass a Date object.`);
+    }
+
     const endDate = event.end
         ? (event.end instanceof Date ? event.end : new Date(event.end))
         : new Date(startDate.getTime() + (event.durationMinutes || 60) * 60000);
+    if (isNaN(endDate.getTime())) {
+        throw new Error(`Invalid end date: "${event.end}". Use ISO 8601 format or pass a Date object.`);
+    }
 
     const body: any = {
         summary: event.summary,
