@@ -99,17 +99,22 @@ export class SupabaseMemory {
     // ── Feedback System ──────────────────────────────────────────────
 
     async trackBotMessage(chatId: string, messageId: number, responseText: string): Promise<void> {
-        const { error } = await getClient()
-            .from("bot_messages")
-            .upsert(
-                {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    response_text: responseText.substring(0, 500),
-                },
-                { onConflict: "chat_id,message_id" }
-            );
-        if (error) console.error("❌ Supabase trackBotMessage:", error.message);
+        try {
+            const { error } = await getClient()
+                .from("bot_messages")
+                .upsert(
+                    {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        response_text: responseText.substring(0, 500),
+                    },
+                    { onConflict: "chat_id,message_id" }
+                );
+            if (error) console.warn("⚠️ Supabase trackBotMessage:", error.message);
+        } catch (err) {
+            // Network-level failure (fetch failed, DNS, timeout) — non-critical, skip silently
+            console.warn("⚠️ Supabase trackBotMessage network error (skipped):", err instanceof Error ? err.message : String(err));
+        }
     }
 
     async saveFeedback(chatId: string, messageId: number, signal: string, emoji: string): Promise<void> {
@@ -326,18 +331,24 @@ export class SupabaseMemory {
     }
 
     async getPendingReminders(): Promise<any[]> {
-        const { data, error } = await getClient()
-            .from("reminders")
-            .select("*")
-            .eq("status", "pending")
-            .lte("remind_at", new Date().toISOString())
-            .order("remind_at", { ascending: true });
+        try {
+            const { data, error } = await getClient()
+                .from("reminders")
+                .select("*")
+                .eq("status", "pending")
+                .lte("remind_at", new Date().toISOString())
+                .order("remind_at", { ascending: true });
 
-        if (error) {
-            console.error("❌ Supabase getPendingReminders:", error.message);
+            if (error) {
+                console.warn("⚠️ Supabase getPendingReminders:", error.message);
+                return [];
+            }
+            return data ?? [];
+        } catch (err) {
+            // Network-level failure (fetch failed, DNS, timeout) — return empty, retry next cycle
+            console.warn("⚠️ Supabase getPendingReminders network error (will retry next cycle):", err instanceof Error ? err.message : String(err));
             return [];
         }
-        return data ?? [];
     }
 
     async updateReminderStatus(id: string, status: 'completed' | 'failed' | 'cancelled'): Promise<void> {
