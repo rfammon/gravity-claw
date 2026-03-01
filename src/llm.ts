@@ -33,7 +33,7 @@ const openCodeClient = new OpenAI({
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
-        standard: "google/gemini-2.5-flash", // Correct ID (OpenRouter usually maps without the :free suffix if free is active or we use the base one)
+        standard: "google/gemini-2.0-flash-lite-preview-02-05:free", // Correct ID (OpenRouter usually maps without the :free suffix if free is active or we use the base one)
     },
     groq: {
         standard: "llama-3.3-70b-versatile",
@@ -141,7 +141,7 @@ export async function chatLight(
     maxTokens: number = 1024
 ): Promise<OpenAI.Chat.Completions.ChatCompletion | any> {
     const sanitizedMessages = messages.map(msg => {
-        const { timestamp, ...rest } = msg as any;
+        const { timestamp, reasoning_content, ...rest } = msg as any;
         return rest as Message;
     });
 
@@ -167,7 +167,7 @@ export async function chatLight(
         console.log(`🤖 [Light] Fallback to OpenRouter [google/gemini-2.0-flash-lite]...`);
         const response = await withRetry(
             () => openRouterClient.chat.completions.create({
-                model: "google/gemini-2.0-flash-lite",
+                model: MODELS.openRouter.standard,
                 max_tokens: maxTokens,
                 messages: sanitizedMessages,
             }),
@@ -189,14 +189,14 @@ export async function chat(
 
     // Sanitize messages
     const sanitizedMessages = messages.map(msg => {
-        // Remove 'timestamp' as Groq/OpenAI reject it
-        const { timestamp, ...msgWithoutTimestamp } = msg as any;
+        // Remove 'timestamp' and 'reasoning_content' as Groq/OpenAI reject it
+        const { timestamp, reasoning_content, ...msgCleaned } = msg as any;
 
-        if (msgWithoutTimestamp.role === 'assistant' && msgWithoutTimestamp.content === null && msgWithoutTimestamp.tool_calls) {
-            const { content, ...rest } = msgWithoutTimestamp;
+        if (msgCleaned.role === 'assistant' && msgCleaned.content === null && msgCleaned.tool_calls) {
+            const { content, ...rest } = msgCleaned;
             return rest as Message;
         }
-        return msgWithoutTimestamp as Message;
+        return msgCleaned as Message;
     });
 
     const callArgs: any = {
