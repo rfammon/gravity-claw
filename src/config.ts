@@ -73,6 +73,10 @@ const openCodeApiKey = optionalEnv("OPENCODE_API_KEY");
 const openCodeBaseUrl = optionalEnv("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1");
 const openCodeDefaultModel = optionalEnv("OPENCODE_DEFAULT_MODEL", "big-pickle");
 
+console.log("\n📋 Local AI:");
+const primaryProvider = optionalEnv("PRIMARY_PROVIDER", "openrouter");
+const ollamaDefaultModel = optionalEnv("OLLAMA_DEFAULT_MODEL", "qwen2.5:0.5b");
+
 console.log("\n📋 Google Calendar:");
 const googleCalendarToken = optionalEnv("GOOGLE_CALENDAR_TOKEN");
 const googleCalendarRefreshToken = optionalEnv("GOOGLE_CALENDAR_REFRESH_TOKEN");
@@ -101,13 +105,17 @@ export const config = {
     modalBaseUrl,
     modalApiKey,
     ocrSpaceApiKey,
+    masterKey,
+    puterDefaultModel,
+    openCodeApiKey,
+    openCodeBaseUrl,
+    openCodeDefaultModel,
+    primaryProvider,
+    ollamaDefaultModel,
 
     // ── Supabase (optional — enables cloud DB) ───────────
     supabaseUrl,
     supabaseServiceKey,
-
-    // ── Security ──────────────────────────────────────────
-    masterKey,
 
     // ── Ollama Fallback ───────────────────────────────────
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
@@ -117,13 +125,7 @@ export const config = {
     lowResourceMode: process.env.LOW_RESOURCE_MODE === "true",
     maxConcurrentTools: parseInt(process.env.MAX_CONCURRENT_TOOLS || "4"),
 
-    // ── Puter (Code Agent Fallback) ────────────────────────
-    puterDefaultModel,
-
-    // ── OpenCode Zen ────────────────────────────────────────
-    openCodeApiKey,
-    openCodeBaseUrl,
-    openCodeDefaultModel,
+    // ── OpenCode Zen / Puter models resolved at top ──
 
     // ── Puter Token ─────────────────────────────────────────
     puterToken: process.env.PUTER_TOKEN || "",

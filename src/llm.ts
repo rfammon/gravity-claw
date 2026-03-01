@@ -49,7 +49,7 @@ const MODELS = {
     },
     ollama: {
         simple: "qwen2.5:0.5b",
-        standard: "llama3.2:3b",
+        standard: config.ollamaDefaultModel || "llama3.2:3b",
     }
 };
 
@@ -145,7 +145,29 @@ export async function chatLight(
         return rest as Message;
     });
 
-    // PRIMARY: Groq (fast, cheap, reliable for simple tasks)
+    // PRIMARY OVERRIDE: Ollama (if configured in .env)
+    if (config.primaryProvider === "ollama") {
+        try {
+            console.log(`🤖 [Light] Requesting Ollama [${MODELS.ollama.standard}]...`);
+            const response = await withRetry(
+                () => ollamaChat(sanitizedMessages as any, MODELS.ollama.standard, []),
+                { maxRetries: 1 }
+            );
+            console.log(`✅ [Light] Ollama response received`);
+            return {
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: response.content || ""
+                    }
+                }]
+            };
+        } catch (error) {
+            console.warn(`⚠️ [Light] Ollama failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
+        }
+    }
+
+    // FALLBACK 1: Groq (fast, cheap, reliable for simple tasks)
     try {
         console.log(`🤖 [Light] Requesting Groq [${MODELS.groq.standard}]...`);
         // Limit history for Groq to avoid 12k TPM limit
@@ -216,7 +238,54 @@ export async function chat(
     // "Bom dia". This caused an infinite loop of raw JSON responses.
     // All tasks now go through the cloud primary (Puter) or full Ollama fallback.
 
-    // ── PRIMARY: OPENROUTER ─────────────────────────────────
+    // ── PRIMARY OVERRIDE: OLLAMA (If requested) ─────────────
+    if (config.primaryProvider === "ollama") {
+        try {
+            console.log(`🤖 Requesting LLM (Primary Configured: Ollama [${MODELS.ollama.standard}])...`);
+            const ollamaStartTime = Date.now();
+
+            // Build the XML instruction only for the local fallback since it doesn't support native tools well
+            const ollamaSystemInstruction = tools.length > 0 ? `\n\n[FERRAMENTAS DISPONÍVEIS]\nVocê DEVE usar OBRIGATORIAMENTE o seguinte formato XML para invocar funções:\n<function_calls>\n` +
+                tools.map((t: any) => `<invoke name="${t.function.name}">\n${Object.keys(t.function.parameters?.properties || {}).map(
+                    (p: any) => `<parameter name="${p}">[valor]</parameter>`
+                ).join("\n")
+                    }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
+
+            const messagesWithToolsInstruction = sanitizedMessages.map((m, i) => {
+                if (i === 0 && m.role === "system") {
+                    return { ...m, content: String(m.content) + ollamaSystemInstruction };
+                }
+                return m;
+            });
+
+            const messageObj = await withRetry(
+                () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.standard, tools),
+                { maxRetries: 1 }
+            );
+
+            let parsed;
+            if (messageObj.tool_calls && messageObj.tool_calls.length > 0) {
+                parsed = { content: messageObj.content || "", tool_calls: messageObj.tool_calls };
+            } else {
+                parsed = parseTextToToolCalls(messageObj.content || "");
+            }
+
+            console.log(`✅ LLM Response received from Ollama in ${Date.now() - ollamaStartTime}ms`);
+            return {
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: parsed.content,
+                        tool_calls: parsed.tool_calls
+                    }
+                }]
+            };
+        } catch (error) {
+            console.warn(`⚠️ Ollama failed: ${error instanceof Error ? error.message : String(error)}. Trying next...`);
+        }
+    }
+
+    // ── DEFAULT PRIMARY: OPENROUTER ─────────────────────────
     try {
         console.log(`🤖 Requesting LLM (Primary: OpenRouter [${MODELS.openRouter.standard}])...`);
         const orStartTime = Date.now();
