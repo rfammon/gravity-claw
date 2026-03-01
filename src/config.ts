@@ -74,9 +74,10 @@ const openCodeBaseUrl = optionalEnv("OPENCODE_BASE_URL", "https://opencode.ai/ze
 const openCodeDefaultModel = optionalEnv("OPENCODE_DEFAULT_MODEL", "big-pickle");
 
 console.log("\n📋 Local AI:");
-const primaryProvider = optionalEnv("PRIMARY_PROVIDER", "openrouter");
-const ollamaDefaultModel = optionalEnv("OLLAMA_DEFAULT_MODEL", "qwen2.5:0.5b");
-
+const primaryProviderRaw = optionalEnv("PRIMARY_PROVIDER", "openrouter");
+const primaryProvider = (primaryProviderRaw || "openrouter").replace(/['"\\s\\r\\n]/g, '').toLowerCase();
+const ollamaDefaultModelRaw = optionalEnv("OLLAMA_DEFAULT_MODEL", "llama3.2:3b");
+const ollamaDefaultModel = (ollamaDefaultModelRaw || "llama3.2:3b").replace(/['"\\r\\n]/g, '').trim();
 console.log("\n📋 Google Calendar:");
 const googleCalendarToken = optionalEnv("GOOGLE_CALENDAR_TOKEN");
 const googleCalendarRefreshToken = optionalEnv("GOOGLE_CALENDAR_REFRESH_TOKEN");
