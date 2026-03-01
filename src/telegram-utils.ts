@@ -12,15 +12,16 @@ export async function sendTelegramMessage(chatId: string, text: string) {
         );
     } catch (err) {
         console.error(`❌ Failed to send message to ${chatId}:`, err);
+        throw err;
     }
 }
 
 export async function sendTelegramPhoto(chatId: string, photo: string | Buffer, caption?: string) {
     if (!config.allowedUserIds.includes(Number(chatId))) return;
     try {
-        const inputFile = typeof photo === "string" ? photo : new InputFile(photo, "chart.png");
+        const photoInput = typeof photo === "string" ? photo : new InputFile(photo);
         await withRetry(
-            () => bot.api.sendPhoto(chatId, inputFile, {
+            () => bot.api.sendPhoto(chatId, photoInput, {
                 caption,
                 parse_mode: "Markdown"
             }),
@@ -28,5 +29,6 @@ export async function sendTelegramPhoto(chatId: string, photo: string | Buffer, 
         );
     } catch (err) {
         console.error(`❌ Failed to send photo to ${chatId}:`, err);
+        throw err;
     }
 }

@@ -43,8 +43,10 @@ export async function pollReminders() {
 
             // 2. Call local "Porteiro" for local execution/logging
             try {
-                const porterResponse = await porter.notify(reminder.reminder_text, reminder.id);
-                console.log(`🤖 Porter said: ${porterResponse}`);
+                const porterResponse: any = await porter.notify(reminder.reminder_text, reminder.id);
+                const textOutput = typeof porterResponse === 'string' ? porterResponse :
+                    porterResponse?.content || JSON.stringify(porterResponse);
+                console.log(`🤖 Porter said: ${textOutput}`);
             } catch (pErr) {
                 console.warn(`⚠️ Porter execution failed:`, pErr);
             }
