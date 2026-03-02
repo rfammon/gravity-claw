@@ -18,6 +18,9 @@ import "./tools/get-current-time.js";
 import "./tools/web-search.js";
 import "./tools/trello.js";
 import "./tools/registry.js"; // This now registers browser_url
+import { registerWebMCPTool } from "./tools/webmcp-tool.js";
+registerWebMCPTool();
+
 import "./code-agent.js"; // GLM-5 code specialist sub-agent
 import "./finance-agent.js"; // 💰 Finance planning specialist sub-agent
 import "./finance/finance-tools.js"; // 💰 CFO pessoal — 19 finance tools

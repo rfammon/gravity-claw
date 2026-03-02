@@ -251,7 +251,13 @@ export async function chat(
                 ).join("\n")
                     }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
 
-            const messagesWithToolsInstruction = sanitizedMessages.map((m, i) => {
+            let ollamaMessages = sanitizedMessages;
+            if (sanitizedMessages.length > 12) {
+                // Keep system message (first), and the last 10 messages to limit size
+                ollamaMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
+            }
+
+            const messagesWithToolsInstruction = ollamaMessages.map((m, i) => {
                 if (i === 0 && m.role === "system") {
                     return { ...m, content: String(m.content) + ollamaSystemInstruction };
                 }
