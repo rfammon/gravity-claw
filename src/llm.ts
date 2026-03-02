@@ -2,7 +2,6 @@ import OpenAI from "openai";
 import Groq from "groq-sdk";
 import { config } from "./config.js";
 import { getOpenAITools } from "./tools/registry.js";
-import { puterChat } from "./llm-utils.js";
 import { withRetry } from "./utils/network.js";
 import { ollamaChat } from "./ollama.js";
 
@@ -33,16 +32,13 @@ const openCodeClient = new OpenAI({
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
-        standard: "google/gemma-3-27b-it:free", // Verified free model
+        standard: "deepseek/deepseek-r1:free", // Verified free reasoning model
     },
     groq: {
         standard: "llama-3.3-70b-versatile",
     },
     modal: {
         standard: "zai-org/GLM-5-FP8",
-    },
-    puter: {
-        standard: config.puterDefaultModel || "moonshotai/kimi-k2.5",
     },
     opencode: {
         standard: config.openCodeDefaultModel || "big-pickle",
@@ -145,26 +141,24 @@ export async function chatLight(
         return rest as Message;
     });
 
-    // PRIMARY OVERRIDE: Ollama (if configured in .env)
-    if (config.primaryProvider === "ollama") {
-        try {
-            console.log(`🤖 [Light] Requesting Ollama [${MODELS.ollama.standard}]...`);
-            const response = await withRetry(
-                () => ollamaChat(sanitizedMessages as any, MODELS.ollama.standard, []),
-                { maxRetries: 1 }
-            );
-            console.log(`✅ [Light] Ollama response received`);
-            return {
-                choices: [{
-                    message: {
-                        role: "assistant",
-                        content: response.content || ""
-                    }
-                }]
-            };
-        } catch (error) {
-            console.warn(`⚠️ [Light] Ollama failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
-        }
+    // PRIMARY: Ollama (Local and cheap for robotic tasks)
+    try {
+        console.log(`🤖 [Light] Requesting Ollama [${MODELS.ollama.standard}]...`);
+        const response = await withRetry(
+            () => ollamaChat(sanitizedMessages as any, MODELS.ollama.standard, []),
+            { maxRetries: 1 }
+        );
+        console.log(`✅ [Light] Ollama response received`);
+        return {
+            choices: [{
+                message: {
+                    role: "assistant",
+                    content: response.content || ""
+                }
+            }]
+        };
+    } catch (error) {
+        console.warn(`⚠️ [Light] Ollama failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
     }
 
     // FALLBACK 1: Groq (fast, cheap, reliable for simple tasks)
@@ -233,67 +227,26 @@ export async function chat(
         tools: tools.length > 0 ? tools : undefined,
     };
 
-    // [NOTE]: Simple task shortcut removed — qwen2.5:0.5b was parroting raw JSON from
-    // conversation history when receiving short messages (< 20 chars) like "Pessoal" or
-    // "Bom dia". This caused an infinite loop of raw JSON responses.
-    // All tasks now go through the cloud primary (Puter) or full Ollama fallback.
-
-    // ── PRIMARY OVERRIDE: OLLAMA (If requested) ─────────────
-    if (config.primaryProvider === "ollama") {
-        try {
-            console.log(`🤖 Requesting LLM (Primary Configured: Ollama [${MODELS.ollama.standard}])...`);
-            const ollamaStartTime = Date.now();
-
-            // Build the XML instruction only for the local fallback since it doesn't support native tools well
-            const ollamaSystemInstruction = tools.length > 0 ? `\n\n[FERRAMENTAS DISPONÍVEIS]\nVocê DEVE usar OBRIGATORIAMENTE o seguinte formato XML para invocar funções:\n<function_calls>\n` +
-                tools.map((t: any) => `<invoke name="${t.function.name}">\n${Object.keys(t.function.parameters?.properties || {}).map(
-                    (p: any) => `<parameter name="${p}">[valor]</parameter>`
-                ).join("\n")
-                    }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
-
-            let ollamaMessages = sanitizedMessages;
-            if (sanitizedMessages.length > 12) {
-                // Keep system message (first), and the last 10 messages to limit size
-                ollamaMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
-            }
-
-            const messagesWithToolsInstruction = ollamaMessages.map((m, i) => {
-                if (i === 0 && m.role === "system") {
-                    return { ...m, content: String(m.content) + ollamaSystemInstruction };
-                }
-                return m;
-            });
-
-            const messageObj = await withRetry(
-                () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.standard, tools),
-                { maxRetries: 1 }
-            );
-
-            let parsed;
-            if (messageObj.tool_calls && messageObj.tool_calls.length > 0) {
-                parsed = { content: messageObj.content || "", tool_calls: messageObj.tool_calls };
-            } else {
-                parsed = parseTextToToolCalls(messageObj.content || "");
-            }
-
-            console.log(`✅ LLM Response received from Ollama in ${Date.now() - ollamaStartTime}ms`);
-            return {
-                choices: [{
-                    message: {
-                        role: "assistant",
-                        content: parsed.content,
-                        tool_calls: parsed.tool_calls
-                    }
-                }]
-            };
-        } catch (error) {
-            console.warn(`⚠️ Ollama failed: ${error instanceof Error ? error.message : String(error)}. Trying next...`);
-        }
+    // ── PRIMARY: MODAL ──────────────────────────────────────
+    try {
+        console.log(`🤖 Requesting LLM (Primary: Modal [${MODELS.modal.standard}])...`);
+        const modalStartTime = Date.now();
+        const response = await withRetry(
+            () => modalClient.chat.completions.create({
+                model: MODELS.modal.standard,
+                ...callArgs
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
+        return response;
+    } catch (error) {
+        console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenRouter (DeepSeek/Qwen)...`);
     }
 
-    // ── DEFAULT PRIMARY: OPENROUTER ─────────────────────────
+    // ── FALLBACK 1: OPENROUTER (DeepSeek/Qwen) ─────────────────────────
     try {
-        console.log(`🤖 Requesting LLM (Primary: OpenRouter [${MODELS.openRouter.standard}])...`);
+        console.log(`🤖 Requesting LLM (Fallback 1: OpenRouter [${MODELS.openRouter.standard}])...`);
         const orStartTime = Date.now();
         const response = await withRetry(
             () => openRouterClient.chat.completions.create({
@@ -308,9 +261,9 @@ export async function chat(
         console.warn(`⚠️ OpenRouter failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
     }
 
-    // ── FALLBACK 1: GROQ ───────────────────────────────────────
+    // ── FALLBACK 2: GROQ ───────────────────────────────────────
     try {
-        console.log(`🤖 Requesting LLM (Fallback 1: Groq [${MODELS.groq.standard}])...`);
+        console.log(`🤖 Requesting LLM (Fallback 2: Groq [${MODELS.groq.standard}])...`);
         const groqStartTime = Date.now();
 
         // Limit history for Groq to avoid 12k TPM limit (typically 8-12 messages max)
@@ -334,10 +287,10 @@ export async function chat(
         console.warn(`⚠️ Groq failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenCode...`);
     }
 
-    // ── FALLBACK 2: OPENCODE ZEN ───────────────────────────────
+    // ── FALLBACK 3: OPENCODE ZEN ───────────────────────────────
     if (config.openCodeApiKey) {
         try {
-            console.log(`🤖 Requesting LLM (Fallback 2: OpenCode [${MODELS.opencode.standard}])...`);
+            console.log(`🤖 Requesting LLM (Fallback 3: OpenCode [${MODELS.opencode.standard}])...`);
             const openCodeStartTime = Date.now();
             const response = await withRetry(
                 () => openCodeClient.chat.completions.create({
@@ -349,28 +302,11 @@ export async function chat(
             console.log(`✅ LLM Response received from OpenCode in ${Date.now() - openCodeStartTime}ms`);
             return response;
         } catch (error) {
-            console.warn(`⚠️ OpenCode failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal...`);
+            console.warn(`⚠️ OpenCode failed: ${error instanceof Error ? error.message : String(error)}. Trying Local Ollama as ultimate fallback...`);
         }
     }
 
-    // ── FALLBACK 3: MODAL ──────────────────────────────────────
-    try {
-        console.log(`🤖 Requesting LLM (Fallback 3: Modal [${MODELS.modal.standard}])...`);
-        const modalStartTime = Date.now();
-        const response = await withRetry(
-            () => modalClient.chat.completions.create({
-                model: MODELS.modal.standard,
-                ...callArgs
-            }),
-            { maxRetries: 2 }
-        );
-        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
-        return response;
-    } catch (error) {
-        console.warn(`⚠️ Modal failed. Trying Local Ollama as ultimate fallback...`);
-    }
-
-    // ── FALLBACK 3: OLLAMA (Local) ─────────────────────────────
+    // ── ULTIMATE FALLBACK: OLLAMA (Local) ─────────────────────────────
     try {
         console.log(`🤖 Requesting LLM (Final Fallback: Ollama [${MODELS.ollama.standard}])...`);
 
@@ -381,7 +317,13 @@ export async function chat(
             ).join("\n")
                 }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
 
-        const messagesWithToolsInstruction = sanitizedMessages.map((m, i) => {
+        let ollamaMessages = sanitizedMessages;
+        if (sanitizedMessages.length > 12) {
+            // Keep system message (first), and the last 10 messages to limit size
+            ollamaMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
+        }
+
+        const messagesWithToolsInstruction = ollamaMessages.map((m, i) => {
             if (i === 0 && m.role === "system") {
                 return { ...m, content: String(m.content) + ollamaSystemInstruction };
             }

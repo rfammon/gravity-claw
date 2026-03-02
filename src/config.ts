@@ -66,7 +66,6 @@ const modalBaseUrl = optionalEnv("MODAL_BASE_URL");
 const modalApiKey = optionalEnv("MODAL_API_KEY");
 const ocrSpaceApiKey = optionalEnv("OCR_SPACE_API_KEY");
 const masterKey = optionalEnv("MASTER_KEY");
-const puterDefaultModel = optionalEnv("PUTER_DEFAULT_MODEL", "moonshotai/kimi-k2.5");
 
 console.log("\n📋 OpenCode Zen:");
 const openCodeApiKey = optionalEnv("OPENCODE_API_KEY");
@@ -107,7 +106,6 @@ export const config = {
     modalApiKey,
     ocrSpaceApiKey,
     masterKey,
-    puterDefaultModel,
     openCodeApiKey,
     openCodeBaseUrl,
     openCodeDefaultModel,
@@ -126,10 +124,7 @@ export const config = {
     lowResourceMode: process.env.LOW_RESOURCE_MODE === "true",
     maxConcurrentTools: parseInt(process.env.MAX_CONCURRENT_TOOLS || "4"),
 
-    // ── OpenCode Zen / Puter models resolved at top ──
-
-    // ── Puter Token ─────────────────────────────────────────
-    puterToken: process.env.PUTER_TOKEN || "",
+    // ── OpenCode Zen models resolved at top ──
 
     // ── Google Calendar ─────────────────────────────────────
     googleCalendarToken,

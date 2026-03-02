@@ -6,10 +6,7 @@ import { registerTool, getOpenAITools, getTool } from "./tools/registry.js";
 const CODE_MODEL_MODAL = "zai-org/GLM-5-FP8";
 const CODE_MODEL_OPENROUTER = "qwen/qwen-2.5-72b-instruct";
 
-// Cache Puter module to avoid repeated imports
-let puterModule: any = null;
-
-// ── Modal Client (Fallback 1) ──────────────────────────────────────
+// ── Modal Client (Primary) ──────────────────────────────────────
 function getModalClient(): OpenAI | null {
     if (!config.modalBaseUrl || !config.modalApiKey) {
         return null;
@@ -20,7 +17,7 @@ function getModalClient(): OpenAI | null {
     });
 }
 
-// ── OpenRouter Client (Fallback 2) ────────────────────────────────
+// ── OpenRouter Client (Fallback 1) ────────────────────────────────
 function getOpenRouterClient(): OpenAI {
     return new OpenAI({
         baseURL: "https://openrouter.ai/api/v1",
@@ -30,36 +27,6 @@ function getOpenRouterClient(): OpenAI {
             "X-Title": "Gravity Claw Code Agent",
         },
     });
-}
-
-// ── Puter Client (Primary) ─────────────────────────────────────────
-async function getPuterClient(authToken?: string): Promise<any> {
-    if (!puterModule) {
-        puterModule = await import("@heyputer/puter.js/src/init.cjs");
-    }
-
-    const { init } = puterModule;
-
-    // Try to get token from:
-    // 1. Parameter
-    // 2. Environment variable
-    // 3. Saved token file
-    let token = authToken || process.env.PUTER_TOKEN;
-
-    if (!token) {
-        try {
-            const fs = await import("fs");
-            const tokenPath = "./.puter-token";
-            if (fs.existsSync(tokenPath)) {
-                token = fs.readFileSync(tokenPath, "utf-8").trim();
-                console.log("📂 Loaded Puter token from .puter-token file");
-            }
-        } catch {
-            // Ignore - token file doesn't exist
-        }
-    }
-
-    return init(token || undefined);
 }
 
 // ─── System Prompt for Code Agent ─────────────────────────────────
@@ -85,63 +52,11 @@ CODE MODIFICATION WORKFLOW:
 10. When creating routines, use the 'create_routine' tool with a cron expression and action prompt.`;
 
 // ── Run Code Agent with Fallback Chain ────────────────────────────
-// Order: Puter (Primary) → Modal → OpenRouter
+// Order: Modal (Primary) → OpenRouter
 export async function runCodeAgent(task: string): Promise<string> {
     const startTime = Date.now();
 
-    // PRIMARY: Try Puter first (free, reliable)
-    try {
-        console.log(`⚡ Code Agent: Trying Puter (${config.puterDefaultModel})...`);
-        const puter = await getPuterClient();
-
-        const response = await puter.ai.chat(
-            [
-                { role: "system", content: CODE_SYSTEM_PROMPT },
-                { role: "user", content: task }
-            ],
-            { model: config.puterDefaultModel || "moonshotai/kimi-k2.5" }
-        );
-
-        // Extract text from Puter response
-        let result = "";
-        if (typeof response === "string") {
-            result = response;
-        } else if (response?.message?.content) {
-            result = response.message.content;
-        } else if (response?.content) {
-            result = response.content;
-        } else if (response?.text) {
-            result = response.text;
-        } else if (response?.message && typeof response.message === "string") {
-            // Handle error messages like "Missing authentication token"
-            if (response.message.includes("token") || response.message.includes("auth")) {
-                console.log(`⚠️ Puter auth issue: ${response.message}. Trying fallback...`);
-                throw new Error(response.message);
-            }
-            result = response.message;
-        } else {
-            result = JSON.stringify(response);
-        }
-
-        // Check for auth errors in string response
-        if (result.includes("token_missing") || result.includes("authentication")) {
-            console.log("⚠️ Puter requires authentication. Trying fallback...");
-            throw new Error("Puter authentication required");
-        }
-
-        if (result && result.length > 10 && !result.includes("undefined")) {
-            const elapsed = Date.now() - startTime;
-            console.log(`✅ Code Agent (Puter) responded in ${elapsed}ms`);
-            return result;
-        }
-
-        console.log("⚠️ Puter returned empty/short response, trying fallback...");
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`⚠️ Puter failed: ${msg}. Trying fallback...`);
-    }
-
-    // FALLBACK 1: Modal (GLM-5-FP8 Code Specialist)
+    // PRIMARY: Modal (GLM-5-FP8 Code Specialist)
     const modalClient = getModalClient();
     if (modalClient) {
         try {
@@ -217,7 +132,7 @@ export async function runCodeAgent(task: string): Promise<string> {
         console.log("ℹ️ Modal not configured, skipping...");
     }
 
-    // FALLBACK 2: OpenRouter (Qwen)
+    // FALLBACK 1: OpenRouter (Qwen)
     try {
         console.log(`⚡ Code Agent: Trying OpenRouter (${CODE_MODEL_OPENROUTER})...`);
         const openRouterClient = getOpenRouterClient();
@@ -292,15 +207,15 @@ export async function runCodeAgent(task: string): Promise<string> {
     // All fallbacks failed
     return JSON.stringify({
         error: "All code agent backends failed",
-        details: "Puter, Modal, and OpenRouter all returned errors.",
-        suggestion: "Check if Puter is authenticated or verify API keys in .env"
+        details: "Modal and OpenRouter both returned errors.",
+        suggestion: "Verify API keys in .env"
     });
 }
 
 // ── Register as a Tool ────────────────────────────────────────────
 registerTool({
     name: "delegate_to_code_agent",
-    description: "Delegate a coding task or complex technical problem to the code specialist. Use this when the user asks you to write code, build scripts, debug programs, explain complex algorithms, or handle any programming-related task. Fallback chain: Puter (Kimi) → Modal (GLM-5) → OpenRouter (Qwen).",
+    description: "Delegate a coding task or complex technical problem to the code specialist. Use this when the user asks you to write code, build scripts, debug programs, explain complex algorithms, or handle any programming-related task. Fallback chain: Modal (GLM-5) → OpenRouter (Qwen).",
     parameters: {
         type: "object",
         properties: {
@@ -322,4 +237,4 @@ registerTool({
     }
 });
 
-console.log("🔧 Code Agent registered: Puter → Modal → OpenRouter");
+console.log("🔧 Code Agent registered: Modal → OpenRouter");
