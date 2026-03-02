@@ -221,9 +221,19 @@ function initSchema(database: DatabaseAdapter): void {
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS reminders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL,
+      reminder_text TEXT NOT NULL,
+      remind_at DATETIME NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_memories_chat_id ON memories(chat_id);
     CREATE INDEX IF NOT EXISTS idx_facts_chat_id ON facts(chat_id);
     CREATE INDEX IF NOT EXISTS idx_feedback_chat_id ON feedback(chat_id);
+    CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status);
   `);
 
   console.log("✅ Database schema initialized");
