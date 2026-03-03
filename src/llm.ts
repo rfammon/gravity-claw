@@ -218,7 +218,7 @@ export async function chat(
     // ── OVERRIDE: LOCAL / CUSTOM CLOUD PRIMARY ─────────────────
     if (config.primaryProvider === "ollama") {
         try {
-            console.log(`🤖 Requesting LLM (Primary Override: Ollama [${config.ollamaDefaultModel}])...`);
+            console.log(`🤖 Requesting LLM (Primary Override: Ollama [${config.ollamaDefaultModel}] @ ${config.ollamaBaseUrl})...`);
             const ollamaStartTime = Date.now();
             const response = await ollamaChat(sanitizedMessages as any, config.ollamaDefaultModel, tools);
             console.log(`✅ LLM Response received from Ollama in ${Date.now() - ollamaStartTime}ms`);

@@ -67,6 +67,10 @@ const modalApiKey = optionalEnv("MODAL_API_KEY");
 const ocrSpaceApiKey = optionalEnv("OCR_SPACE_API_KEY");
 const masterKey = optionalEnv("MASTER_KEY");
 
+console.log("\n📋 Ollama Cloud / Local:");
+const ollamaApiKey = optionalEnv("OLLAMA_API_KEY");
+const ollamaBaseUrl = optionalEnv("OLLAMA_BASE_URL", ollamaApiKey ? "https://ollama.com" : "http://localhost:11434");
+
 console.log("\n📋 OpenCode Zen:");
 const openCodeApiKey = optionalEnv("OPENCODE_API_KEY");
 const openCodeBaseUrl = optionalEnv("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1");
@@ -75,8 +79,9 @@ const openCodeDefaultModel = optionalEnv("OPENCODE_DEFAULT_MODEL", "big-pickle")
 console.log("\n📋 Local AI:");
 const primaryProviderRaw = optionalEnv("PRIMARY_PROVIDER", "openrouter");
 const primaryProvider = (primaryProviderRaw || "openrouter").replace(/['"\\s\\r\\n]/g, '').toLowerCase();
-const ollamaDefaultModelRaw = optionalEnv("OLLAMA_DEFAULT_MODEL", process.env.OLLAMA_API_KEY ? "glm-5:cloud" : "llama3.2:3b");
-const ollamaDefaultModel = (ollamaDefaultModelRaw || (process.env.OLLAMA_API_KEY ? "glm-5:cloud" : "llama3.2:3b")).replace(/['"\r\n]/g, '').trim();
+
+const ollamaDefaultModelRaw = optionalEnv("OLLAMA_DEFAULT_MODEL");
+const ollamaDefaultModel = (ollamaDefaultModelRaw || (ollamaApiKey ? "glm-5:cloud" : "llama3.2:3b")).replace(/['"\r\n]/g, '').trim();
 console.log("\n📋 Google Calendar:");
 const googleCalendarToken = optionalEnv("GOOGLE_CALENDAR_TOKEN");
 const googleCalendarRefreshToken = optionalEnv("GOOGLE_CALENDAR_REFRESH_TOKEN");
@@ -117,8 +122,8 @@ export const config = {
     supabaseServiceKey,
 
     // ── Ollama Cloud / Local ─────────────────────────────
-    ollamaBaseUrl: process.env.OLLAMA_BASE_URL || (process.env.OLLAMA_API_KEY ? "https://ollama.com" : "http://localhost:11434"),
-    ollamaApiKey: process.env.OLLAMA_API_KEY || "",
+    ollamaBaseUrl,
+    ollamaApiKey,
 
     // ── Performance ────────────────────────────────────────
     lowResourceMode: process.env.LOW_RESOURCE_MODE === "true",
@@ -152,4 +157,9 @@ if (config.googleCalendarToken) {
     console.log("📅 Google Calendar: ENABLED");
 } else {
     console.log("📅 Google Calendar: DISABLED (set GOOGLE_CALENDAR_TOKEN)");
+}
+if (config.ollamaApiKey) {
+    console.log(`🤖 Ollama Cloud: ENABLED (Model: ${config.ollamaDefaultModel})`);
+} else {
+    console.log("🤖 Ollama: LOCAL (No API Key detected)");
 }
