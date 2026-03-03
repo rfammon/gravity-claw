@@ -215,6 +215,35 @@ export async function chat(
         return res;
     };
 
+    // ── OVERRIDE: LOCAL / CUSTOM CLOUD PRIMARY ─────────────────
+    if (config.primaryProvider === "ollama") {
+        try {
+            console.log(`🤖 Requesting LLM (Primary Override: Ollama [${config.ollamaDefaultModel}])...`);
+            const ollamaStartTime = Date.now();
+            const response = await ollamaChat(sanitizedMessages as any, config.ollamaDefaultModel, tools);
+            console.log(`✅ LLM Response received from Ollama in ${Date.now() - ollamaStartTime}ms`);
+            return parseResponse(response);
+        } catch (error) {
+            console.warn(`⚠️ Ollama primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
+        }
+    } else if (config.primaryProvider === "opencode" && config.openCodeApiKey) {
+        try {
+            console.log(`🤖 Requesting LLM (Primary Override: OpenCode [${MODELS.opencode.standard}])...`);
+            const ocStartTime = Date.now();
+            const response = await withRetry(
+                () => openCodeClient.chat.completions.create({
+                    model: MODELS.opencode.standard,
+                    ...callArgs
+                }),
+                { maxRetries: 2 }
+            );
+            console.log(`✅ LLM Response received from OpenCode in ${Date.now() - ocStartTime}ms`);
+            return parseResponse(response);
+        } catch (error) {
+            console.warn(`⚠️ OpenCode primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
+        }
+    }
+
     // ── PRIMARY: OPENROUTER (DeepSeek V3) ─────────────────────────
     try {
         console.log(`🤖 Requesting LLM (Primary: OpenRouter [${MODELS.openRouter.standard}])...`);

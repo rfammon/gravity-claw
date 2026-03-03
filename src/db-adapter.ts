@@ -219,9 +219,11 @@ function initSchema(database: DatabaseAdapter): void {
     `CREATE TABLE IF NOT EXISTS reminders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
+      user_id TEXT,
       reminder_text TEXT NOT NULL,
       remind_at DATETIME NOT NULL,
       status TEXT DEFAULT 'pending',
+      metadata TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS interaction_log (
@@ -248,6 +250,19 @@ function initSchema(database: DatabaseAdapter): void {
       console.error(`❌ Failed to execute schema statement:\n${statement}\nError:`, err);
       hasError = true;
     }
+  }
+
+  // Gracefully add columns to existing local tables
+  try {
+    database.exec(`ALTER TABLE reminders ADD COLUMN user_id TEXT`);
+  } catch (e) {
+    // Ignore: column already exists
+  }
+
+  try {
+    database.exec(`ALTER TABLE reminders ADD COLUMN metadata TEXT`);
+  } catch (e) {
+    // Ignore: column already exists
   }
 
   if (!hasError) {
