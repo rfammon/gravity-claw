@@ -29,15 +29,19 @@ export class SupabaseMemory {
     readonly backend = "supabase" as const;
 
     async saveMessage(chatId: string, role: string, content: string, metadata?: any): Promise<void> {
-        const { error } = await getClient()
-            .from("memories")
-            .insert({
-                chat_id: chatId,
-                role,
-                content,
-                metadata: metadata ?? null,
-            });
-        if (error) console.error("❌ Supabase saveMessage:", error.message);
+        try {
+            const { error } = await getClient()
+                .from("memories")
+                .insert({
+                    chat_id: chatId,
+                    role,
+                    content,
+                    metadata: metadata ?? null,
+                });
+            if (error) console.error("❌ Supabase saveMessage:", error.message);
+        } catch (err) {
+            console.warn("⚠️ Supabase saveMessage network error (skipped):", err instanceof Error ? err.message : String(err));
+        }
     }
 
     async getChatHistory(chatId: string, limit: number = 50): Promise<MemoryEntry[]> {
@@ -272,17 +276,21 @@ export class SupabaseMemory {
         responseLength?: number;
         emotionalState?: string;
     }): Promise<void> {
-        const { error } = await getClient()
-            .from("interaction_log")
-            .insert({
-                chat_id: chatId,
-                topic: entry.topic ?? null,
-                tools_used: entry.toolsUsed ? JSON.stringify(entry.toolsUsed) : null,
-                feedback_signal: entry.feedbackSignal ?? null,
-                response_length: entry.responseLength ?? null,
-                emotional_state: entry.emotionalState ?? null,
-            });
-        if (error) console.error("❌ Supabase saveInteractionLog:", error.message);
+        try {
+            const { error } = await getClient()
+                .from("interaction_log")
+                .insert({
+                    chat_id: chatId,
+                    topic: entry.topic ?? null,
+                    tools_used: entry.toolsUsed ? JSON.stringify(entry.toolsUsed) : null,
+                    feedback_signal: entry.feedbackSignal ?? null,
+                    response_length: entry.responseLength ?? null,
+                    emotional_state: entry.emotionalState ?? null,
+                });
+            if (error) console.error("❌ Supabase saveInteractionLog:", error.message);
+        } catch (err) {
+            console.warn("⚠️ Supabase saveInteractionLog network error (skipped):", err instanceof Error ? err.message : String(err));
+        }
     }
 
     async getInteractionLogs(chatId: string, limit: number = 20): Promise<({
