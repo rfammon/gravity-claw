@@ -53,9 +53,13 @@ export async function runSATC(chatId: string): Promise<void> {
 
     try {
         const result = await runAgent(chatId, prompt);
-        await sendTelegramMessage(chatId, result.text);
-        console.log(`✅ [SATC] Action proposal sent for ${chatId} (topics: ${activePriorities.join(", ")})`);
+        try {
+            await sendTelegramMessage(chatId, result.text);
+            console.log(`✅ [SATC] Action proposal sent for ${chatId} (topics: ${activePriorities.join(", ")})`);
+        } catch (sendErr) {
+            console.error(`❌ [SATC] Failed to send Telegram message for ${chatId}. Message probably has bad Markdown formatting. Error:`, sendErr);
+        }
     } catch (err) {
-        console.error(`❌ [SATC] Error for ${chatId}:`, err);
+        console.error(`❌ [SATC] Agent execution failed for ${chatId}:`, err);
     }
 }

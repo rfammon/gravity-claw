@@ -13,29 +13,46 @@ const DB_PATH = path.join(GRAVITY_DIR, "lance_db");
 
 export class LanceProvider {
     private db: lancedb.Connection | null = null;
+    private dbPromise: Promise<lancedb.Connection> | null = null;
+    private tablePromises: Map<string, Promise<any>> = new Map();
 
     private async connect() {
         if (this.db) return this.db;
-        if (!fs.existsSync(DB_PATH)) {
-            fs.mkdirSync(DB_PATH, { recursive: true });
-        }
-        this.db = await lancedb.connect(DB_PATH);
-        return this.db;
+        if (this.dbPromise) return this.dbPromise;
+
+        this.dbPromise = (async () => {
+            if (!fs.existsSync(DB_PATH)) {
+                fs.mkdirSync(DB_PATH, { recursive: true });
+            }
+            this.db = await lancedb.connect(DB_PATH);
+            return this.db;
+        })();
+
+        return this.dbPromise;
     }
 
     /**
      * Get or create a table in LanceDB.
      */
     async getOrCreateTable(name: string, schema_example: any[]) {
-        const db = await this.connect();
-        const tableNames = await db.tableNames();
-        
-        if (tableNames.includes(name)) {
-            return await db.openTable(name);
+        if (this.tablePromises.has(name)) {
+            return await this.tablePromises.get(name)!;
         }
-        
-        console.log(`🏗️ Creating LanceDB table: ${name}`);
-        return await db.createTable(name, schema_example);
+
+        const promise = (async () => {
+            const db = await this.connect();
+            const tableNames = await db.tableNames();
+
+            if (tableNames.includes(name)) {
+                return await db.openTable(name);
+            }
+
+            console.log(`🏗️ Creating LanceDB table: ${name}`);
+            return await db.createTable(name, schema_example);
+        })();
+
+        this.tablePromises.set(name, promise);
+        return await promise;
     }
 
     /**
@@ -49,18 +66,18 @@ export class LanceProvider {
     /**
      * Search in a table using hybrid search (Vector + FTS).
      */
-    async search(tableName: string, query: { 
-        vector?: number[], 
-        text?: string, 
+    async search(tableName: string, query: {
+        vector?: number[],
+        text?: string,
         limit?: number,
-        filter?: string 
+        filter?: string
     }) {
         const db = await this.connect();
         const tableNames = await db.tableNames();
         if (!tableNames.includes(tableName)) return [];
 
         const table = await db.openTable(tableName);
-        let queryBuilder = table.query();
+        let queryBuilder: any = table.query();
 
         if (query.vector) {
             queryBuilder = queryBuilder.nearestTo(query.vector);

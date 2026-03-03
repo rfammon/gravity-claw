@@ -60,13 +60,17 @@ export class RAGProvider {
             throw new Error(`Failed to generate embeddings: ${error}`);
         }
 
-        await lanceProvider.addData("factual_memories", [{
-            chat_id: String(chatId),
-            content: content,
-            vector: embedding,
-            metadata: JSON.stringify(metadata),
-            created_at: new Date().toISOString()
-        }]);
+        try {
+            await lanceProvider.addData("factual_memories", [{
+                chat_id: String(chatId),
+                content: content,
+                vector: embedding,
+                metadata: JSON.stringify(metadata),
+                created_at: new Date().toISOString()
+            }]);
+        } catch (error) {
+            console.error("❌ RAG AddFact failed to store in LanceDB:", error);
+        }
     }
 
     /**
@@ -76,7 +80,7 @@ export class RAGProvider {
     async searchFacts(chatId: string, query: string, limit: number = 3): Promise<string[]> {
         try {
             const embedding = await this.generateEmbedding(query);
-            
+
             // Build filter to exclude system contamination
             // We only want real facts or important user/assistant interactions
             const results = await lanceProvider.search("factual_memories", {
@@ -84,7 +88,7 @@ export class RAGProvider {
                 filter: `chat_id = '${chatId}' AND content NOT LIKE '%LLM Tracker%' AND content NOT LIKE '%system:%'`,
                 limit: limit
             });
-            
+
             if (results && results.length > 0) {
                 return results.map((row: any) => row.content);
             }

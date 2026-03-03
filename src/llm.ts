@@ -35,6 +35,13 @@ const MODELS = {
 export type Message = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
 /**
+ * Legacy stub for `/think` command from previous behavior.
+ */
+export function setThinkingLevel(level: "off" | "low" | "medium" | "high") {
+    console.log(`🧠 [LLM] Thinking level set to ${level} (Stubbed)`);
+}
+
+/**
  * Lightweight chat for background tasks (Summarization, RAG).
  * Uses LFM or Groq as backup.
  */
@@ -102,7 +109,7 @@ export async function chat(
         console.log(`🤖 Requesting LLM (Fallback: Groq)...`);
         return await groqClient.chat.completions.create({
             model: MODELS.groq,
-            ...callArgs,
+            ...callArgs as any, // Cast to any to bypass Open AI tool mismatch
             messages: messages.slice(-10) as any // Very limited context
         });
     } catch (error) {

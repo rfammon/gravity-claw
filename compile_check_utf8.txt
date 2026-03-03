@@ -1,0 +1,26 @@
+src/bot.ts(48,40): error TS2339: Property 'setThinkingLevel' does not exist on type 'typeof import("C:/gravityclaw/src/llm", { with: { "resolution-mode": "import" } })'.
+src/lance-provider.ts(83,13): error TS2741: Property 'nearestTo' is missing in type 'VectorQuery' but required in type 'Query'.
+src/llm.ts(103,57): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(body: ChatCompletionCreateParamsNonStreaming, options?: RequestOptions<unknown> | undefined): APIPromise<ChatCompletion>', gave the following error.
+    Argument of type '{ messages: any; max_tokens: number; tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined; model: string; }' is not assignable to parameter of type 'ChatCompletionCreateParamsNonStreaming'.
+      Types of property 'tools' are incompatible.
+        Type 'ChatCompletionTool[] | undefined' is not assignable to type 'ChatCompletionTool[] | null | undefined'.
+          Type 'import("C:/gravityclaw/node_modules/openai/resources/chat/completions/completions", { with: { "resolution-mode": "import" } }).ChatCompletionTool[]' is not assignable to type 'import("C:/gravityclaw/node_modules/groq-sdk/resources/chat/completions").ChatCompletionTool[]'.
+            Type 'import("C:/gravityclaw/node_modules/openai/resources/chat/completions/completions", { with: { "resolution-mode": "import" } }).ChatCompletionTool' is not assignable to type 'import("C:/gravityclaw/node_modules/groq-sdk/resources/chat/completions").ChatCompletionTool'.
+              Type 'ChatCompletionFunctionTool' is not assignable to type 'ChatCompletionTool'.
+                The types of 'function.strict' are incompatible between these types.
+                  Type 'boolean | null | undefined' is not assignable to type 'boolean | undefined'.
+                    Type 'null' is not assignable to type 'boolean | undefined'.
+  Overload 2 of 3, '(body: ChatCompletionCreateParamsStreaming, options?: RequestOptions<unknown> | undefined): APIPromise<Stream<ChatCompletionChunk>>', gave the following error.
+    Argument of type '{ messages: any; max_tokens: number; tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined; model: string; }' is not assignable to parameter of type 'ChatCompletionCreateParamsStreaming'.
+      Property 'stream' is missing in type '{ messages: any; max_tokens: number; tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined; model: string; }' but required in type 'ChatCompletionCreateParamsStreaming'.
+  Overload 3 of 3, '(body: ChatCompletionCreateParamsBase, options?: RequestOptions<unknown> | undefined): APIPromise<ChatCompletion | Stream<...>>', gave the following error.
+    Argument of type '{ messages: any; max_tokens: number; tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined; model: string; }' is not assignable to parameter of type 'ChatCompletionCreateParamsBase'.
+      Types of property 'tools' are incompatible.
+        Type 'ChatCompletionTool[] | undefined' is not assignable to type 'ChatCompletionTool[] | null | undefined'.
+          Type 'import("C:/gravityclaw/node_modules/openai/resources/chat/completions/completions", { with: { "resolution-mode": "import" } }).ChatCompletionTool[]' is not assignable to type 'import("C:/gravityclaw/node_modules/groq-sdk/resources/chat/completions").ChatCompletionTool[]'.
+            Type 'import("C:/gravityclaw/node_modules/openai/resources/chat/completions/completions", { with: { "resolution-mode": "import" } }).ChatCompletionTool' is not assignable to type 'import("C:/gravityclaw/node_modules/groq-sdk/resources/chat/completions").ChatCompletionTool'.
+              Type 'ChatCompletionFunctionTool' is not assignable to type 'ChatCompletionTool'.
+                The types of 'function.strict' are incompatible between these types.
+                  Type 'boolean | null | undefined' is not assignable to type 'boolean | undefined'.
+                    Type 'null' is not assignable to type 'boolean | undefined'.
