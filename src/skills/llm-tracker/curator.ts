@@ -123,7 +123,7 @@ export async function runCurationCycle() {
                 curated_summary: curationInfo.summary
             });
 
-            // 5. Add to RAG (Factual Memory) - so the agent knows about it instantly
+            // 5. Add to RAG (Factual Memory) and notify user instantly
             try {
                 const factContent = `[LLM Tracker] Nova descoberta: ${post.title}. Sumário: ${curationInfo.summary}. Fonte: ${post.url}`;
                 // Add to first allowed user (usually the primary)
@@ -134,6 +134,20 @@ export async function runCurationCycle() {
                     type: "llm_tracker_discovery"
                 });
                 console.log(`🧠 Fact added to RAG for ${primaryChatId}`);
+
+                try {
+                    const { sendTelegramMessage } = await import("../../telegram-utils.js");
+                    const { saveMessage } = await import("../../db-provider.js");
+
+                    const notificationText = `🚨 *LLM Tracker - Novo Achado*\n\n*${post.title}*\n\n${curationInfo.summary}\n\n[Ler Fonte](${post.url})`;
+                    await sendTelegramMessage(primaryChatId, notificationText);
+
+                    // Salvar na memória como system para Megamind saber na hora
+                    await saveMessage(primaryChatId, "system", factContent);
+                    console.log(`📲 Notified user and updated active memory for ${primaryChatId}`);
+                } catch (notifyErr) {
+                    console.warn("⚠️ Failed to notify user/save memory:", notifyErr);
+                }
             } catch (ragErr) {
                 console.warn("⚠️ Failed to add fact to RAG:", ragErr);
             }

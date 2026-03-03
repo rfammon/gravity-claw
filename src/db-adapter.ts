@@ -174,34 +174,31 @@ async function createSqlJsAdapter(dbPath: string): Promise<DatabaseAdapter> {
  * Initialize database schema
  */
 function initSchema(database: DatabaseAdapter): void {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS memories (
+  const schemaStatements = [
+    `CREATE TABLE IF NOT EXISTS memories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
       role TEXT NOT NULL,
       content TEXT NOT NULL,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
       metadata TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS facts (
+    )`,
+    `CREATE TABLE IF NOT EXISTS facts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
       key TEXT NOT NULL,
       value TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(chat_id, key)
-    );
-
-    CREATE TABLE IF NOT EXISTS bot_messages (
+    )`,
+    `CREATE TABLE IF NOT EXISTS bot_messages (
       message_id INTEGER NOT NULL,
       chat_id TEXT NOT NULL,
       response_text TEXT NOT NULL,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (chat_id, message_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS feedback (
+    )`,
+    `CREATE TABLE IF NOT EXISTS feedback (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
       message_id INTEGER NOT NULL,
@@ -209,9 +206,8 @@ function initSchema(database: DatabaseAdapter): void {
       signal TEXT NOT NULL,
       emoji TEXT NOT NULL,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS user_judgments (
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_judgments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
       type TEXT NOT NULL CHECK( type IN ('daily', 'weekly') ),
@@ -219,24 +215,46 @@ function initSchema(database: DatabaseAdapter): void {
       period_end DATETIME NOT NULL,
       opinion TEXT NOT NULL,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS reminders (
+    )`,
+    `CREATE TABLE IF NOT EXISTS reminders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL,
       reminder_text TEXT NOT NULL,
       remind_at DATETIME NOT NULL,
       status TEXT DEFAULT 'pending',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+    )`,
+    `CREATE TABLE IF NOT EXISTS interaction_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL,
+      topic TEXT,
+      tools_used TEXT,
+      feedback_signal TEXT,
+      response_length INTEGER,
+      emotional_state TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_memories_chat_id ON memories(chat_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_facts_chat_id ON facts(chat_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_feedback_chat_id ON feedback(chat_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status)`
+  ];
 
-    CREATE INDEX IF NOT EXISTS idx_memories_chat_id ON memories(chat_id);
-    CREATE INDEX IF NOT EXISTS idx_facts_chat_id ON facts(chat_id);
-    CREATE INDEX IF NOT EXISTS idx_feedback_chat_id ON feedback(chat_id);
-    CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status);
-  `);
+  let hasError = false;
+  for (const statement of schemaStatements) {
+    try {
+      database.exec(statement);
+    } catch (err) {
+      console.error(`❌ Failed to execute schema statement:\n${statement}\nError:`, err);
+      hasError = true;
+    }
+  }
 
-  console.log("✅ Database schema initialized");
+  if (!hasError) {
+    console.log("✅ Database schema initialized");
+  } else {
+    console.warn("⚠️ Database schema initialized with errors.");
+  }
 }
 
 /**
