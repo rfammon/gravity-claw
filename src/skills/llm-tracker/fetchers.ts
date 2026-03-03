@@ -16,7 +16,11 @@ export async function fetchReddit(subreddit: string): Promise<RawPost[]> {
         console.log(`📡 Fetching Reddit: r/${subreddit}`);
         // Fetch both 'hot' and 'new' to not miss anything
         for (const sort of ["hot", "new"]) {
-            const response = await fetch(`https://www.reddit.com/r/${subreddit}/${sort}.json?limit=25`);
+            const response = await fetch(`https://www.reddit.com/r/${subreddit}/${sort}.json?limit=25`, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                }
+            });
             if (!response.ok) continue;
 
             const data = await response.json();
