@@ -70,10 +70,16 @@ const masterKey = optionalEnv("MASTER_KEY");
 console.log("\n📋 Ollama Cloud / Local:");
 const ollamaApiKey = optionalEnv("OLLAMA_API_KEY");
 let ollamaBaseUrl = optionalEnv("OLLAMA_BASE_URL");
-if (!ollamaBaseUrl || ollamaBaseUrl === "http://localhost:11434") {
+
+// Para chat: se tem API key e URL explícita, usa cloud; caso contrário, local
+if (!ollamaBaseUrl) {
     ollamaBaseUrl = ollamaApiKey ? "https://ollama.com/api" : "http://localhost:11434";
 }
-console.log(`   Ollama: URL=${ollamaBaseUrl}, HasAPIKey=${!!ollamaApiKey}`);
+
+// Para embeddings: sempre usa local (a menos que explicitamente configurado)
+const ollamaEmbedUrl = process.env.OLLAMA_EMBED_URL || "http://localhost:11434";
+
+console.log(`   Ollama: URL=${ollamaBaseUrl}, EmbedURL=${ollamaEmbedUrl}, HasAPIKey=${!!ollamaApiKey}`);
 
 console.log("\n📋 OpenCode Zen:");
 const openCodeApiKey = optionalEnv("OPENCODE_API_KEY");
@@ -128,6 +134,7 @@ export const config = {
     // ── Ollama Cloud / Local ─────────────────────────────
     ollamaBaseUrl,
     ollamaApiKey,
+    ollamaEmbedUrl,
 
     // ── Performance ────────────────────────────────────────
     lowResourceMode: process.env.LOW_RESOURCE_MODE === "true",

@@ -32,7 +32,7 @@ const openCodeClient = new OpenAI({
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
-        standard: "deepseek/deepseek-chat", // DeepSeek V3 optimized for speed/routing
+        standard: "z-ai/glm-4.5-air:free", // Free model with 131K context, supports tools
         light: "liquid/lfm-40b", // Liquid LFM for background summarizations
     },
     groq: {

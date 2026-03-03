@@ -81,16 +81,19 @@ export async function ollamaChat(
 
 /**
  * Generate embeddings using Ollama.
+ * Always uses local Ollama for embeddings (unless OLLAMA_EMBED_URL is set)
  */
 export async function ollamaEmbeddings(
     input: string,
     model: string = "nomic-embed-text"
 ): Promise<number[]> {
-    const rawBase = config.ollamaBaseUrl || "http://localhost:11434";
+    const rawBase = config.ollamaEmbedUrl || "http://localhost:11434";
     const normalizedBase = rawBase.replace(/\/+$/, "");
 
     const isCloudDirect = normalizedBase.includes("ollama.com/api");
     const isOpenAICompatible = normalizedBase.endsWith('/v1');
+
+    console.log("📡 Ollama Embed URL:", normalizedBase);
 
     return withRetry(async () => {
         let url: string;
