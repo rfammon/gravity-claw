@@ -5,8 +5,11 @@ import { saveMessage, getChatHistory, getFacts, getFeedbackSummary, getLatestJud
 import { cachedSkills } from "./skills.js";
 import { analyzeMessageForPatterns, getTopTopics } from "./recommendations.js";
 import { runProjectAgentIfBlocked } from "./project-agent.js";
+import { contextOptimizer } from "./context-optimizer.js";
+import { rag } from "./rag-provider.js";
 
 const MAX_ITERATIONS = 10;
+
 
 export interface AgentResult {
   text: string;
@@ -32,13 +35,24 @@ export async function runAgent(
   // Track which tools are called during this run
   const calledTools: string[] = [];
 
-  // 1. Get history from DB (limit to last 15 messages to save tokens and maintain concise context)
-  const history = (await getChatHistory(chatId, 15)) as Message[];
+  // 1. Get history from DB (limit to 30 messages to allow for summarization)
+  const rawHistory = (await getChatHistory(chatId, 30)) as Message[];
+  
+  // 1b. Optimize context (Compress old messages if needed)
+  const history = await contextOptimizer.compressHistory(chatId, rawHistory);
 
   // 2. Add system prompt with facts
-  const facts = await getFacts(chatId);
-  const factSummary = Object.entries(facts).map(([k, v]) => `${k}: ${v}`).join("\n");
+  const searchLimit = contextOptimizer.calculateSearchLimit(enrichedMessage);
+  const semanticFacts = searchLimit > 0 ? await rag.searchFacts(chatId, enrichedMessage, searchLimit) : [];
+  
+  const structuredFacts = await getFacts(chatId);
+  const factSummary = [
+    ...Object.entries(structuredFacts).map(([k, v]) => `${k}: ${v}`),
+    ...semanticFacts
+  ].join("\n");
+  
   const judgments = await getLatestJudgments(chatId);
+
 
   const systemPrompt: Message = {
     role: "system",
