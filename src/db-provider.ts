@@ -59,6 +59,7 @@ export interface IMemoryProvider {
 
 let _db: IMemoryProvider;
 let _backend: "supabase" | "sqlite" | "pending" = "pending";
+let _rawSqliteDb: any = null;
 
 async function initializeProvider(): Promise<IMemoryProvider> {
     // Try Supabase first (if configured)
@@ -94,6 +95,7 @@ async function initializeProvider(): Promise<IMemoryProvider> {
     try {
         const { initDatabase, getDatabase } = await import("./db-adapter.js");
         const db = await initDatabase();
+        _rawSqliteDb = db;
 
         // Wrap database adapter to match IMemoryProvider interface
         return createSQLiteProvider(db);
@@ -334,11 +336,11 @@ function createSQLiteProvider(db: any): IMemoryProvider {
 }
 
 // Initialize and export
-const providerPromise = initializeProvider();
+let _currentDbPromise = initializeProvider();
 
 // Export database instance (for direct access if needed)
 export async function getDb(): Promise<IMemoryProvider> {
-    return providerPromise;
+    return _currentDbPromise;
 }
 
 // Export backend type
@@ -346,11 +348,104 @@ export function getBackendType(): string {
     return _backend;
 }
 
+/**
+ * Attempts to connect to Supabase if the initial boot fell back to SQLite.
+ * If successful, syncs all local data up to the cloud and hot-swaps the provider.
+ */
+export async function attemptSupabaseReconnect(): Promise<boolean> {
+    if (_backend === "supabase" || _backend === "pending") return false;
+    if (!config.supabaseUrl || !config.supabaseServiceKey) return false;
+
+    console.log("☁️  Running background Supabase reconnect check...");
+    try {
+        const { SupabaseMemory } = await import("./supabase-db.js");
+        const supabaseProvider = new SupabaseMemory();
+
+        const { getClient } = await import("./supabase-db.js");
+        const supabase = getClient();
+
+        // Test connection
+        const { error } = await supabase.from("memories").select("id").limit(1);
+        if (error && error.code !== "PGRST116") throw new Error(`Query failed: ${error.message}`);
+
+        console.log("✅ Background Supabase connection established! Syncing local data...");
+
+        // Sync local to cloud
+        await syncLocalToSupabase(supabase);
+
+        // Hot-swap the provider globally
+        _backend = "supabase";
+        _currentDbPromise = Promise.resolve(supabaseProvider);
+        _currentDbPromise.then(db => { _cachedDb = db; });
+        console.log("🔄 Database provider successfully hot-swapped to Supabase.");
+        return true;
+    } catch (err) {
+        console.error("⚠️ Background Supabase reconnect attempt failed:", err instanceof Error ? err.message : String(err));
+        return false;
+    }
+}
+
+async function syncLocalToSupabase(supabase: any) {
+    if (!_rawSqliteDb) return;
+    try {
+        console.log("☁️ Starting SQLite -> Supabase background sync...");
+
+        // Memories
+        const memories = _rawSqliteDb.prepare("SELECT * FROM memories").all();
+        if (memories.length > 0) {
+            await supabase.from("memories").upsert(memories);
+            console.log(`☁️ Synced ${memories.length} memories.`);
+        }
+
+        // Facts
+        const facts = _rawSqliteDb.prepare("SELECT * FROM facts").all();
+        if (facts.length > 0) {
+            await supabase.from("facts").upsert(facts, { onConflict: "chat_id, key" });
+            console.log(`☁️ Synced ${facts.length} facts.`);
+        }
+
+        // Bot Messages
+        const botMsgs = _rawSqliteDb.prepare("SELECT * FROM bot_messages").all();
+        if (botMsgs.length > 0) {
+            await supabase.from("bot_messages").upsert(botMsgs, { onConflict: "chat_id, message_id" });
+            console.log(`☁️ Synced ${botMsgs.length} bot messages.`);
+        }
+
+        // Feedback
+        const feedback = _rawSqliteDb.prepare("SELECT * FROM feedback").all();
+        if (feedback.length > 0) {
+            await supabase.from("feedback").upsert(feedback);
+        }
+
+        // Judgments
+        const judgments = _rawSqliteDb.prepare("SELECT * FROM user_judgments").all();
+        if (judgments.length > 0) {
+            await supabase.from("user_judgments").upsert(judgments);
+        }
+
+        // Reminders
+        const reminders = _rawSqliteDb.prepare("SELECT * FROM reminders").all();
+        if (reminders.length > 0) {
+            await supabase.from("reminders").upsert(reminders);
+        }
+
+        // Interaction Logs
+        const logs = _rawSqliteDb.prepare("SELECT * FROM interaction_log").all();
+        if (logs.length > 0) {
+            await supabase.from("interaction_log").upsert(logs);
+        }
+
+        console.log("☁️ SQLite -> Supabase sync completed successfully!");
+    } catch (e) {
+        console.error("⚠️ Local DB synchronization to Supabase failed:", e);
+    }
+}
+
 // Synchronous exports (for backwards compatibility)
 // These will use the cached provider after initialization
 let _cachedDb: IMemoryProvider | null = null;
 
-providerPromise.then(db => {
+_currentDbPromise.then(db => {
     _cachedDb = db;
 });
 

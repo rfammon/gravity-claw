@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { runAgent } from "./agent.js";
-import { saveMessage } from "./db-provider.js";
+import { saveMessage, attemptSupabaseReconnect } from "./db-provider.js";
 import { sendTelegramMessage, sendTelegramPhoto } from "./telegram-utils.js";
 import { generateDailyJudgment, generateWeeklyJudgment } from "./judgment.js";
 import * as db from "./finance/finance-db.js";
@@ -219,6 +219,15 @@ export function setupGlobalTasks() {
             await pollReminders();
         } catch (err) {
             console.error(`❌ Reminder poll error:`, err);
+        }
+    });
+
+    // ☁️ Database Failover: Attempt to reconnect to Supabase every 5 minutes if fallen back to SQLite
+    scheduler.schedule("global_supabase_reconnect", "*/5 * * * *", async () => {
+        try {
+            await attemptSupabaseReconnect();
+        } catch (err) {
+            console.error(`❌ Supabase reconnect check error:`, err);
         }
     });
 
