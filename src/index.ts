@@ -1,4 +1,13 @@
 // ─── Gravity Claw — Entry Point ──────────────────────────────────────
+// Patch console.warn to suppress node-cron spam on Android Doze
+const originalWarn = console.warn;
+console.warn = function (...args: any[]) {
+    if (typeof args[0] === 'string' && args[0].includes('Possible blocking IO or high CPU user at the same process used by node-cron')) {
+        return; // Suppress verbose node-cron Android sleep warnings
+    }
+    originalWarn.apply(console, args);
+};
+
 // Platform detection first (validates runtime environment)
 import { logPlatformInfo, getPlatformConfig } from "./platform.js";
 await logPlatformInfo();

@@ -32,7 +32,8 @@ const openCodeClient = new OpenAI({
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
-        standard: "deepseek/deepseek-r1:free", // Verified free reasoning model
+        standard: "deepseek/deepseek-chat", // DeepSeek V3 optimized for speed/routing
+        light: "liquid/lfm-40b", // Liquid LFM for background summarizations
     },
     groq: {
         standard: "llama-3.3-70b-versatile",
@@ -42,10 +43,6 @@ const MODELS = {
     },
     opencode: {
         standard: config.openCodeDefaultModel || "big-pickle",
-    },
-    ollama: {
-        simple: "qwen2.5:0.5b",
-        standard: config.ollamaDefaultModel || "llama3.2:3b",
     }
 };
 
@@ -141,30 +138,27 @@ export async function chatLight(
         return rest as Message;
     });
 
-    // PRIMARY: Ollama (Local and cheap for robotic tasks)
+    // PRIMARY: OpenRouter (Liquid LFM-40b)
     try {
-        console.log(`🤖 [Light] Requesting Ollama [${MODELS.ollama.standard}]...`);
+        console.log(`🤖 [Light] Requesting OpenRouter [${MODELS.openRouter.light}]...`);
+        // Liquid LFM handles 32k context perfectly for large summarizations
         const response = await withRetry(
-            () => ollamaChat(sanitizedMessages as any, MODELS.ollama.standard, []),
-            { maxRetries: 1 }
+            () => openRouterClient.chat.completions.create({
+                model: MODELS.openRouter.light,
+                max_tokens: maxTokens,
+                messages: sanitizedMessages as any,
+            }),
+            { maxRetries: 2 }
         );
-        console.log(`✅ [Light] Ollama response received`);
-        return {
-            choices: [{
-                message: {
-                    role: "assistant",
-                    content: response.content || ""
-                }
-            }]
-        };
+        console.log(`✅ [Light] OpenRouter (Liquid) response received`);
+        return response;
     } catch (error) {
-        console.warn(`⚠️ [Light] Ollama failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
+        console.warn(`⚠️ [Light] OpenRouter (Liquid) failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    // FALLBACK 1: Groq (fast, cheap, reliable for simple tasks)
+    // FALLBACK 2: Groq (fast, reliable but 413s on large context)
     try {
-        console.log(`🤖 [Light] Requesting Groq [${MODELS.groq.standard}]...`);
-        // Limit history for Groq to avoid 12k TPM limit
+        console.log(`🤖 [Light] Fallback to Groq [${MODELS.groq.standard}]...`);
         let groqMessages = sanitizedMessages;
         if (sanitizedMessages.length > 12) {
             groqMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
@@ -182,23 +176,6 @@ export async function chatLight(
         return response;
     } catch (error) {
         console.warn(`⚠️ [Light] Groq failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    // FALLBACK: OpenRouter with a lighter model
-    try {
-        console.log(`🤖 [Light] Fallback to OpenRouter [google/gemini-2.0-flash-lite]...`);
-        const response = await withRetry(
-            () => openRouterClient.chat.completions.create({
-                model: MODELS.openRouter.standard,
-                max_tokens: maxTokens,
-                messages: sanitizedMessages,
-            }),
-            { maxRetries: 2 }
-        );
-        console.log(`✅ [Light] OpenRouter lite response received`);
-        return response;
-    } catch (error) {
-        console.warn(`⚠️ [Light] OpenRouter lite failed: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
     }
 }
@@ -227,26 +204,9 @@ export async function chat(
         tools: tools.length > 0 ? tools : undefined,
     };
 
-    // ── PRIMARY: MODAL ──────────────────────────────────────
+    // ── PRIMARY: OPENROUTER (DeepSeek V3) ─────────────────────────
     try {
-        console.log(`🤖 Requesting LLM (Primary: Modal [${MODELS.modal.standard}])...`);
-        const modalStartTime = Date.now();
-        const response = await withRetry(
-            () => modalClient.chat.completions.create({
-                model: MODELS.modal.standard,
-                ...callArgs
-            }),
-            { maxRetries: 2 }
-        );
-        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
-        return response;
-    } catch (error) {
-        console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenRouter (DeepSeek/Qwen)...`);
-    }
-
-    // ── FALLBACK 1: OPENROUTER (DeepSeek/Qwen) ─────────────────────────
-    try {
-        console.log(`🤖 Requesting LLM (Fallback 1: OpenRouter [${MODELS.openRouter.standard}])...`);
+        console.log(`🤖 Requesting LLM (Primary: OpenRouter [${MODELS.openRouter.standard}])...`);
         const orStartTime = Date.now();
         const response = await withRetry(
             () => openRouterClient.chat.completions.create({
@@ -258,7 +218,24 @@ export async function chat(
         console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - orStartTime}ms`);
         return response;
     } catch (error) {
-        console.warn(`⚠️ OpenRouter failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
+        console.warn(`⚠️ OpenRouter failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal (GLM-5)...`);
+    }
+
+    // ── FALLBACK 1: MODAL (GLM-5) ──────────────────────────────────────
+    try {
+        console.log(`🤖 Requesting LLM (Fallback 1: Modal [${MODELS.modal.standard}])...`);
+        const modalStartTime = Date.now();
+        const response = await withRetry(
+            () => modalClient.chat.completions.create({
+                model: MODELS.modal.standard,
+                ...callArgs
+            }),
+            { maxRetries: 2 }
+        );
+        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
+        return response;
+    } catch (error) {
+        console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
     }
 
     // ── FALLBACK 2: GROQ ───────────────────────────────────────
@@ -302,60 +279,11 @@ export async function chat(
             console.log(`✅ LLM Response received from OpenCode in ${Date.now() - openCodeStartTime}ms`);
             return response;
         } catch (error) {
-            console.warn(`⚠️ OpenCode failed: ${error instanceof Error ? error.message : String(error)}. Trying Local Ollama as ultimate fallback...`);
+            console.warn(`⚠️ OpenCode failed: ${error instanceof Error ? error.message : String(error)}`);
+            throw error;
         }
     }
 
-    // ── ULTIMATE FALLBACK: OLLAMA (Local) ─────────────────────────────
-    try {
-        console.log(`🤖 Requesting LLM (Final Fallback: Ollama [${MODELS.ollama.standard}])...`);
-
-        // Build the XML instruction only for the local fallback since it doesn't support native tools well
-        const ollamaSystemInstruction = tools.length > 0 ? `\n\n[FERRAMENTAS DISPONÍVEIS]\nVocê DEVE usar OBRIGATORIAMENTE o seguinte formato XML para invocar funções:\n<function_calls>\n` +
-            tools.map((t: any) => `<invoke name="${t.function.name}">\n${Object.keys(t.function.parameters?.properties || {}).map(
-                (p: any) => `<parameter name="${p}">[valor]</parameter>`
-            ).join("\n")
-                }\n</invoke>`).join("\n") + `\n</function_calls>\n\nNunca escreva o código XML dentro de blocos de markdown. Apenas printe o XML direto no texto.` : "";
-
-        let ollamaMessages = sanitizedMessages;
-        if (sanitizedMessages.length > 12) {
-            // Keep system message (first), and the last 10 messages to limit size
-            ollamaMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
-        }
-
-        const messagesWithToolsInstruction = ollamaMessages.map((m, i) => {
-            if (i === 0 && m.role === "system") {
-                return { ...m, content: String(m.content) + ollamaSystemInstruction };
-            }
-            return m;
-        });
-
-        const messageObj = await withRetry(
-            () => ollamaChat(messagesWithToolsInstruction as any, MODELS.ollama.standard, tools),
-            { maxRetries: 1 }
-        );
-
-        let parsed;
-        if (messageObj.tool_calls && messageObj.tool_calls.length > 0) {
-            // Native format support!
-            parsed = { content: messageObj.content || "", tool_calls: messageObj.tool_calls };
-        } else {
-            // Fallback to text parsing if native didn't trigger
-            parsed = parseTextToToolCalls(messageObj.content || "");
-        }
-
-        return {
-            choices: [{
-                message: {
-                    role: "assistant",
-                    content: parsed.content,
-                    tool_calls: parsed.tool_calls
-                }
-            }]
-        };
-    } catch (error) {
-        console.error(`❌ All LLM providers failed (including local)! Last error: ${error instanceof Error ? error.message : String(error)}`);
-        throw error;
-    }
+    throw new Error("❌ All cloud LLM providers failed and no local fallback available!");
 }
 
