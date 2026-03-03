@@ -204,6 +204,17 @@ export async function chat(
         tools: tools.length > 0 ? tools : undefined,
     };
 
+    const parseResponse = (res: any) => {
+        if (!res?.choices?.[0]?.message?.content) return res;
+        const msg = res.choices[0].message;
+        const parsed = parseTextToToolCalls(msg.content);
+        msg.content = parsed.content;
+        if (parsed.tool_calls && parsed.tool_calls.length > 0) {
+            msg.tool_calls = [...(msg.tool_calls || []), ...parsed.tool_calls];
+        }
+        return res;
+    };
+
     // ── PRIMARY: OPENROUTER (DeepSeek V3) ─────────────────────────
     try {
         console.log(`🤖 Requesting LLM (Primary: OpenRouter [${MODELS.openRouter.standard}])...`);
@@ -216,7 +227,7 @@ export async function chat(
             { maxRetries: 2 }
         );
         console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - orStartTime}ms`);
-        return response;
+        return parseResponse(response);
     } catch (error) {
         console.warn(`⚠️ OpenRouter failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal (GLM-5)...`);
     }
@@ -233,7 +244,7 @@ export async function chat(
             { maxRetries: 2 }
         );
         console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
-        return response;
+        return parseResponse(response);
     } catch (error) {
         console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
     }
@@ -259,7 +270,7 @@ export async function chat(
             { maxRetries: 2 }
         );
         console.log(`✅ LLM Response received from Groq in ${Date.now() - groqStartTime}ms`);
-        return response;
+        return parseResponse(response);
     } catch (error) {
         console.warn(`⚠️ Groq failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenCode...`);
     }
@@ -277,7 +288,7 @@ export async function chat(
                 { maxRetries: 2 }
             );
             console.log(`✅ LLM Response received from OpenCode in ${Date.now() - openCodeStartTime}ms`);
-            return response;
+            return parseResponse(response);
         } catch (error) {
             console.warn(`⚠️ OpenCode failed: ${error instanceof Error ? error.message : String(error)}`);
             throw error;

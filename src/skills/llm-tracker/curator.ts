@@ -98,6 +98,7 @@ export async function runCurationCycle() {
 
     let processed = 0;
     let relevantCount = 0;
+    const aggregatedNotifications: string[] = [];
 
     // 2. Process each post
     for (const post of rawPosts) {
@@ -136,11 +137,10 @@ export async function runCurationCycle() {
                 console.log(`🧠 Fact added to RAG for ${primaryChatId}`);
 
                 try {
-                    const { sendTelegramMessage } = await import("../../telegram-utils.js");
                     const { saveMessage } = await import("../../db-provider.js");
 
-                    const notificationText = `🚨 *LLM Tracker - Novo Achado*\n\n*${post.title}*\n\n${curationInfo.summary}\n\n[Ler Fonte](${post.url})`;
-                    await sendTelegramMessage(primaryChatId, notificationText);
+                    const notificationText = `*${post.title}*\n${curationInfo.summary}\n[Ler Fonte](${post.url})`;
+                    aggregatedNotifications.push(notificationText);
 
                     // Salvar na memória como system para Megamind saber na hora
                     await saveMessage(primaryChatId, "system", factContent);
@@ -165,4 +165,18 @@ export async function runCurationCycle() {
     }
 
     console.log(`✅ Curation Cycle Complete. Processed: ${processed}, Relevant Found: ${relevantCount}.`);
+
+    // 6. Send aggregated Telegram notification
+    if (aggregatedNotifications.length > 0) {
+        try {
+            const { sendTelegramMessage } = await import("../../telegram-utils.js");
+            const primaryChatId = String(config.allowedUserIds[0] || "global");
+
+            const finalMessage = `🚨 *LLM Tracker - Resumo (${aggregatedNotifications.length} itens)*\n\n${aggregatedNotifications.join("\n\n---\n\n")}`;
+            await sendTelegramMessage(primaryChatId, finalMessage);
+            console.log(`📲 Sent aggregated Telegram notification for ${aggregatedNotifications.length} items.`);
+        } catch (err) {
+            console.warn("⚠️ Failed to send aggregated Telegram message:", err);
+        }
+    }
 }
