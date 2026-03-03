@@ -291,12 +291,35 @@ function createSQLiteProvider(db: any): IMemoryProvider {
         },
 
         snapshotState: (chatId, stateData, reason) => {
-            // Not implemented for SQLite yet, but needs the method to satisfy interface
-            console.warn("⚠️ Mental State snapshots not fully implemented for SQLite yet.");
+            try {
+                const stmt = db.prepare(`
+                    INSERT INTO mental_states (chat_id, state_data, reason)
+                    VALUES (?, ?, ?)
+                `);
+                stmt.run(chatId, JSON.stringify(stateData), reason || null);
+            } catch (err) {
+                console.warn("⚠️ Failed to save mental state:", err);
+            }
         },
 
         getLatestState: (chatId) => {
-            return null; // Not implemented for SQLite yet
+            try {
+                const stmt = db.prepare(`
+                    SELECT state_data, timestamp FROM mental_states 
+                    WHERE chat_id = ? ORDER BY timestamp DESC LIMIT 1
+                `);
+                const row = stmt.get(chatId) as { state_data: string; timestamp: string } | undefined;
+                if (row) {
+                    return {
+                        state: JSON.parse(row.state_data),
+                        timestamp: row.timestamp
+                    };
+                }
+                return null;
+            } catch (err) {
+                console.warn("⚠️ Failed to get mental state:", err);
+                return null;
+            }
         },
 
         updateAutomationStatus: (taskId, status, summary, metadata) => {

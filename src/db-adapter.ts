@@ -236,6 +236,13 @@ function initSchema(database: DatabaseAdapter): void {
       emotional_state TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
+    `CREATE TABLE IF NOT EXISTS mental_states (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL,
+      state_data TEXT NOT NULL,
+      reason TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
     `CREATE INDEX IF NOT EXISTS idx_memories_chat_id ON memories(chat_id)`,
     `CREATE INDEX IF NOT EXISTS idx_facts_chat_id ON facts(chat_id)`,
     `CREATE INDEX IF NOT EXISTS idx_feedback_chat_id ON feedback(chat_id)`,

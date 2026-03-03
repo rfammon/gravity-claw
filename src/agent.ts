@@ -119,11 +119,11 @@ FORMATTING:
 
       // Log interaction for analytics and trigger evolution
       const topTopicsList = getTopTopics(chatId, 3);
-      Promise.resolve(saveInteractionLog(chatId, {
+      await saveInteractionLog(chatId, {
         topic: topTopicsList[0],
         toolsUsed: calledTools,
         responseLength: finalResponse.length,
-      })).catch(() => { });
+      }).catch((err) => console.warn("⚠️ saveInteractionLog failed:", err));
 
       return { text: finalResponse, media: accumulatedMedia };
     }
