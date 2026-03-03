@@ -58,10 +58,17 @@ export async function ollamaChat(
 
         if (!response.ok) {
             const errorText = await response.text();
+            console.error("❌ Ollama API error details:", {
+                status: response.status,
+                url,
+                body: JSON.stringify(body).substring(0, 500),
+                errorText
+            });
             throw new Error(`Ollama API error (${response.status} at ${url}): ${errorText}`);
         }
 
         const data = await response.json() as any;
+        console.log("📦 Ollama response:", JSON.stringify(data).substring(0, 200));
         return isOpenAICompatible ? data.choices[0].message : data.message;
     }, { maxRetries: 1 });
 }
