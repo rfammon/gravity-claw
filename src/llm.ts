@@ -29,6 +29,65 @@ const openCodeClient = new OpenAI({
     apiKey: config.openCodeApiKey || "sk-local-stub", // Allow local without key
 });
 
+// ── Google Gemini API (AI Studio - FREE) ──────────────────
+async function googleChat(messages: Message[], tools?: any[]): Promise<any> {
+    const apiKey = config.googleApiKey;
+    const modelId = config.googleLlmModel || "gemini-1.5-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+
+    // Convert messages to Gemini format
+    const contents = messages.map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content || "" }]
+    }));
+
+    const body: any = {
+        contents,
+        generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+        },
+    };
+
+    if (tools && tools.length > 0) {
+        body.tools = [{ functionDeclarations: tools.map((t: any) => t.function) }];
+    }
+
+    const response = await fetch(`${url}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`Google API Error: ${err}`);
+    }
+
+    const data = await response.json() as any;
+    const candidate = data.candidates && data.candidates[0];
+    if (!candidate) throw new Error("No candidates returned from Gemini");
+
+    const part = candidate.content.parts[0];
+    const message: any = {
+        role: "assistant",
+        content: part.text || null,
+    };
+
+    if (part.functionCall) {
+        message.tool_calls = [{
+            id: `call_${Date.now()}`,
+            type: "function",
+            function: {
+                name: part.functionCall.name,
+                arguments: JSON.stringify(part.functionCall.args)
+            }
+        }];
+    }
+
+    return message;
+}
+
 // ── Models ────────────────────────────────────────────────
 const MODELS = {
     openRouter: {
@@ -138,47 +197,52 @@ export async function chatLight(
         return rest as Message;
     });
 
-    // PRIMARY: OpenRouter (Liquid LFM-40b)
+    // PRIMARY: Google Gemini (Fast & Free)
+    if (config.googleApiKey) {
+        try {
+            console.log(`🤖 [Light] Requesting Google Gemini [${config.googleLlmModel}]...`);
+            const message = await googleChat(sanitizedMessages as any);
+            return {
+                choices: [{ message, finish_reason: "stop", index: 0 }]
+            };
+        } catch (error) {
+            console.warn(`⚠️ [Light] Google Gemini failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    // FALLBACK: OpenRouter (Liquid LFM-40b)
     try {
-        console.log(`🤖 [Light] Requesting OpenRouter [${MODELS.openRouter.light}]...`);
-        // Liquid LFM handles 32k context perfectly for large summarizations
+        console.log(`🤖 [Light] Fallback to OpenRouter [${MODELS.openRouter.light}]...`);
         const response = await withRetry(
             () => openRouterClient.chat.completions.create({
                 model: MODELS.openRouter.light,
                 max_tokens: maxTokens,
                 messages: sanitizedMessages as any,
             }),
-            { maxRetries: 2 }
+            { maxRetries: 1 }
         );
-        console.log(`✅ [Light] OpenRouter (Liquid) response received`);
         return response;
     } catch (error) {
-        console.warn(`⚠️ [Light] OpenRouter (Liquid) failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`⚠️ [Light] OpenRouter (Liquid) failed.`);
     }
 
-    // FALLBACK 2: Groq (fast, reliable but 413s on large context)
+    // FINAL FALLBACK: Groq
     try {
         console.log(`🤖 [Light] Fallback to Groq [${MODELS.groq.standard}]...`);
-        let groqMessages = sanitizedMessages;
-        if (sanitizedMessages.length > 12) {
-            groqMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
-        }
-
         const response = await withRetry(
             () => groqClient.chat.completions.create({
                 model: MODELS.groq.standard,
                 max_tokens: maxTokens,
-                messages: groqMessages as any,
+                messages: sanitizedMessages as any,
             }),
-            { maxRetries: 2 }
+            { maxRetries: 1 }
         );
-        console.log(`✅ [Light] Groq response received`);
         return response;
     } catch (error) {
-        console.warn(`⚠️ [Light] Groq failed: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
     }
 }
+
 
 export async function chat(
     messages: Message[]
@@ -215,8 +279,27 @@ export async function chat(
         return res;
     };
 
+    // PRIMARY: Google Gemini (Fast & Free)
+    if (config.googleApiKey) {
+        try {
+            console.log(`🤖 Requesting LLM (Primary Override: Google Gemini [${config.googleLlmModel}])...`);
+            const message = await googleChat(sanitizedMessages as any, tools);
+            const response = {
+                choices: [{
+                    message,
+                    finish_reason: "stop",
+                    index: 0
+                }]
+            };
+            return parseResponse(response);
+        } catch (error) {
+            console.warn(`⚠️ Google Gemini primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back...`);
+        }
+    }
+
     // ── OVERRIDE: LOCAL / CUSTOM CLOUD PRIMARY ─────────────────
     if (config.primaryProvider === "ollama") {
+
         try {
             console.log(`🤖 Requesting LLM (Primary Override: Ollama [${config.ollamaDefaultModel}] @ ${config.ollamaBaseUrl})...`);
             const ollamaStartTime = Date.now();
@@ -250,6 +333,24 @@ export async function chat(
             return parseResponse(response);
         } catch (error) {
             console.warn(`⚠️ OpenCode primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
+        }
+    } else if (config.primaryProvider === "antigravity" && config.googleRefreshToken) {
+        try {
+            console.log(`🤖 Requesting LLM (Primary Override: Antigravity [${config.googleLlmModel}])...`);
+            const agStartTime = Date.now();
+            const message = await antigravityChat(sanitizedMessages as any, tools);
+            console.log(`✅ LLM Response received from Antigravity in ${Date.now() - agStartTime}ms`);
+
+            const response = {
+                choices: [{
+                    message,
+                    finish_reason: "stop",
+                    index: 0
+                }]
+            };
+            return parseResponse(response);
+        } catch (error) {
+            console.warn(`⚠️ Antigravity primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
         }
     }
 
