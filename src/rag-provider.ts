@@ -1,11 +1,10 @@
-import { getClient } from "./supabase-db.js";
-import { withRetry } from "./utils/network.js";
+import { lanceProvider } from "./lance-provider.js";
 import { ollamaEmbeddings } from "./ollama.js";
 
 /**
  * RAG Provider for semantic factual memory.
  * - LRU in-memory cache for embeddings (100 entries, 10-min TTL)
- * - Text-based ILIKE fallback when Ollama is offline or RPC fails
+ * - Local storage via LanceDB
  */
 
 // ── Embedding cache ──────────────────────────────────────────────────
@@ -61,52 +60,37 @@ export class RAGProvider {
             throw new Error(`Failed to generate embeddings: ${error}`);
         }
 
-        await withRetry(async () => {
-            const { error } = await getClient()
-                .from("factual_memories")
-                .insert({ chat_id: chatId, content, embedding, metadata });
-            if (error) throw error;
-        }, { maxRetries: 2 });
+        await lanceProvider.addData("factual_memories", [{
+            chat_id: String(chatId),
+            content: content,
+            vector: embedding,
+            metadata: JSON.stringify(metadata),
+            created_at: new Date().toISOString()
+        }]);
     }
 
     /**
      * Search for relevant facts using cosine similarity.
-     * Falls back to ILIKE keyword search when vector search is unavailable.
      */
     async searchFacts(chatId: string, query: string, limit: number = 3): Promise<string[]> {
-        // Primary: Vector search
         try {
             const embedding = await this.generateEmbedding(query);
-            const { data, error } = await getClient().rpc("match_factual_memories", {
-                query_embedding: embedding,
-                match_threshold: 0.7,
-                match_count: limit,
-                p_chat_id: chatId
+            const results = await lanceProvider.search("factual_memories", {
+                vector: embedding,
+                filter: `chat_id = '${chatId}'`,
+                limit: limit
             });
-            if (!error && data) {
-                return (data as any[]).map(row => row.content);
+            
+            if (results && results.length > 0) {
+                return results.map((row: any) => row.content);
             }
-            console.warn("⚠️ RAG: Vector RPC failed:", error?.message);
-        } catch {
-            console.warn("⚠️ RAG: Ollama offline — falling back to keyword search.");
+        } catch (error) {
+            console.warn("⚠️ RAG: Vector search failed:", error);
         }
 
-        // Fallback: Keyword search via ILIKE
-        try {
-            const keywords = query.split(/\s+/).filter(w => w.length > 3).slice(0, 5);
-            if (keywords.length === 0) return [];
-            const ilike = keywords.map(k => `content.ilike.%${k}%`).join(",");
-            const { data: keyData } = await getClient()
-                .from("factual_memories")
-                .select("content")
-                .eq("chat_id", chatId)
-                .or(ilike)
-                .limit(limit);
-            return keyData ? (keyData as any[]).map(r => r.content) : [];
-        } catch {
-            return [];
-        }
+        return [];
     }
 }
 
 export const rag = new RAGProvider();
+
