@@ -14,7 +14,7 @@ function requireEnv(name: string): string {
         return "";
     }
     // Sanitize: remove leading/trailing whitespace, quotes, and common terminal artifacts like '>'
-    const cleanValue = value.replace(/['"\\s\\r\\n>]/g, '').trim();
+    const cleanValue = value.replace(/['">\r\n]/g, '').trim();
     console.log(`   ${name}: ✅ Loaded`);
     return cleanValue;
 }
@@ -26,7 +26,7 @@ function optionalEnv(name: string, defaultValue: string = ""): string {
         return defaultValue;
     }
     // Sanitize
-    const cleanValue = value.replace(/['"\\s\\r\\n>]/g, '').trim();
+    const cleanValue = value.replace(/['">\r\n]/g, '').trim();
     // Mask sensitive values
     const masked = cleanValue.length > 20
         ? cleanValue.substring(0, 10) + "..." + cleanValue.substring(cleanValue.length - 6)
@@ -93,7 +93,7 @@ const openCodeDefaultModel = optionalEnv("OPENCODE_DEFAULT_MODEL", "big-pickle")
 
 console.log("\n📋 Local AI:");
 const primaryProviderRaw = optionalEnv("PRIMARY_PROVIDER", "openrouter");
-const primaryProvider = (primaryProviderRaw || "openrouter").replace(/['"\\s\\r\\n]/g, '').toLowerCase();
+const primaryProvider = (primaryProviderRaw || "openrouter").replace(/['">\r\n]/g, '').toLowerCase();
 
 const ollamaDefaultModelRaw = optionalEnv("OLLAMA_DEFAULT_MODEL");
 const ollamaDefaultModel = (ollamaDefaultModelRaw || (ollamaApiKey ? "glm-5:cloud" : "llama3.2:3b")).replace(/['"\r\n]/g, '').trim();
