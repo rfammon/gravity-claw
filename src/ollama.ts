@@ -68,8 +68,14 @@ export async function ollamaChat(
         }
 
         const data = await response.json() as any;
-        console.log("📦 Ollama response:", JSON.stringify(data).substring(0, 200));
-        return isOpenAICompatible ? data.choices[0].message : data.message;
+        console.log("📦 Ollama response:", JSON.stringify(data).substring(0, 500));
+        const message = isOpenAICompatible ? data.choices[0].message : data.message;
+        
+        // Log message content for debugging
+        console.log("📝 Ollama message content:", message?.content?.substring(0, 200));
+        console.log("🔧 Ollama message tool_calls:", message?.tool_calls ? "YES" : "NO");
+        
+        return message;
     }, { maxRetries: 1 });
 }
 
