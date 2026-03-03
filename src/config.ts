@@ -13,8 +13,10 @@ function requireEnv(name: string): string {
         console.error(`❌ Missing required environment variable: ${name}`);
         return "";
     }
+    // Sanitize: remove leading/trailing whitespace, quotes, and common terminal artifacts like '>'
+    const cleanValue = value.replace(/['"\\s\\r\\n>]/g, '').trim();
     console.log(`   ${name}: ✅ Loaded`);
-    return value;
+    return cleanValue;
 }
 
 function optionalEnv(name: string, defaultValue: string = ""): string {
@@ -23,13 +25,16 @@ function optionalEnv(name: string, defaultValue: string = ""): string {
         console.log(`   ${name}: ⚪ Not set (using default)`);
         return defaultValue;
     }
+    // Sanitize
+    const cleanValue = value.replace(/['"\\s\\r\\n>]/g, '').trim();
     // Mask sensitive values
-    const masked = value.length > 20
-        ? value.substring(0, 10) + "..." + value.substring(value.length - 6)
+    const masked = cleanValue.length > 20
+        ? cleanValue.substring(0, 10) + "..." + cleanValue.substring(cleanValue.length - 6)
         : "***";
     console.log(`   ${name}: ✅ Loaded (${masked})`);
-    return value;
+    return cleanValue;
 }
+
 
 function parseUserIds(raw: string): number[] {
     if (!raw || raw === "") {
