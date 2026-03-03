@@ -220,8 +220,17 @@ export async function chat(
         try {
             console.log(`🤖 Requesting LLM (Primary Override: Ollama [${config.ollamaDefaultModel}] @ ${config.ollamaBaseUrl})...`);
             const ollamaStartTime = Date.now();
-            const response = await ollamaChat(sanitizedMessages as any, config.ollamaDefaultModel, tools);
+            const message = await ollamaChat(sanitizedMessages as any, config.ollamaDefaultModel, tools);
             console.log(`✅ LLM Response received from Ollama in ${Date.now() - ollamaStartTime}ms`);
+
+            // Wrap in OpenAI-compatible structure
+            const response = {
+                choices: [{
+                    message,
+                    finish_reason: "stop",
+                    index: 0
+                }]
+            };
             return parseResponse(response);
         } catch (error) {
             console.warn(`⚠️ Ollama primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
