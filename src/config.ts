@@ -71,7 +71,7 @@ console.log("\n📋 Ollama Cloud / Local:");
 const ollamaApiKey = optionalEnv("OLLAMA_API_KEY");
 let ollamaBaseUrl = optionalEnv("OLLAMA_BASE_URL");
 if (!ollamaBaseUrl || ollamaBaseUrl === "http://localhost:11434") {
-    ollamaBaseUrl = ollamaApiKey ? "https://api.ollama.com/v1" : "http://localhost:11434";
+    ollamaBaseUrl = ollamaApiKey ? "https://ollama.com/api" : "http://localhost:11434";
 }
 
 console.log("\n📋 OpenCode Zen:");

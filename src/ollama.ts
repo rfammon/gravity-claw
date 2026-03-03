@@ -12,10 +12,23 @@ export async function ollamaChat(
 ): Promise<any> {
     const rawBase = config.ollamaBaseUrl || "http://localhost:11434";
     const normalizedBase = rawBase.replace(/\/+$/, "");
+
+    // Check if we are using the remote Cloud API directly
+    const isCloudDirect = normalizedBase.includes("ollama.com/api");
     const isOpenAICompatible = normalizedBase.endsWith('/v1');
 
     return withRetry(async () => {
-        const url = isOpenAICompatible ? `${normalizedBase}/chat/completions` : `${normalizedBase}/api/chat`;
+        let url: string;
+        if (isOpenAICompatible) {
+            url = `${normalizedBase}/chat/completions`;
+        } else if (isCloudDirect) {
+            // If it already ends in /api, don't append /api/chat, just /chat? 
+            // Actually ollama.com/api is the base, so /generate or /chat are appended.
+            url = `${normalizedBase}/chat`;
+        } else {
+            url = `${normalizedBase}/api/chat`;
+        }
+
         const body = isOpenAICompatible ? {
             model,
             messages,
@@ -45,7 +58,7 @@ export async function ollamaChat(
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Ollama API error (${response.status}): ${errorText}`);
+            throw new Error(`Ollama API error (${response.status} at ${url}): ${errorText}`);
         }
 
         const data = await response.json() as any;
@@ -62,12 +75,21 @@ export async function ollamaEmbeddings(
 ): Promise<number[]> {
     const rawBase = config.ollamaBaseUrl || "http://localhost:11434";
     const normalizedBase = rawBase.replace(/\/+$/, "");
+
+    const isCloudDirect = normalizedBase.includes("ollama.com/api");
     const isOpenAICompatible = normalizedBase.endsWith('/v1');
 
     return withRetry(async () => {
-        // Native Ollama uses /api/embed, OpenAI-compatible uses /embeddings (or /v1/embeddings)
-        const url = isOpenAICompatible ? `${normalizedBase}/embeddings` : `${normalizedBase}/api/embed`;
-        const body = isOpenAICompatible ? { model, input } : { model, input }; // Native also uses 'input' now in newer versions or 'prompt' in older
+        let url: string;
+        if (isOpenAICompatible) {
+            url = `${normalizedBase}/embeddings`;
+        } else if (isCloudDirect) {
+            url = `${normalizedBase}/embed`;
+        } else {
+            url = `${normalizedBase}/api/embed`;
+        }
+
+        const body = { model, input };
 
         const response = await fetch(url, {
             method: "POST",
@@ -80,7 +102,7 @@ export async function ollamaEmbeddings(
 
         if (!response.ok) {
             const errorText = await response.text();
-            // Handle specific error for older Ollama versions that might still expect 'prompt'
+            // Fallback for older models/versions that want 'prompt' instead of 'input'
             if (response.status === 400 && !isOpenAICompatible) {
                 const retryBody = { model, prompt: input };
                 const retryResponse = await fetch(url, {
@@ -93,15 +115,13 @@ export async function ollamaEmbeddings(
                 });
                 if (retryResponse.ok) {
                     const data = await retryResponse.json() as any;
-                    return data.embedding || data.embeddings[0]; // Handle array vs single
+                    return data.embedding || (data.embeddings && data.embeddings[0]);
                 }
             }
-            throw new Error(`Ollama Embeddings error (${response.status}): ${errorText || response.statusText}`);
+            throw new Error(`Ollama Embeddings error (${response.status} at ${url}): ${errorText || response.statusText}`);
         }
 
         const data = await response.json() as any;
-        // Native /api/embed returns { embedding: [...] }
-        // OpenAI /v1/embeddings returns { data: [{ embedding: [...] }] }
         if (isOpenAICompatible) return data.data[0].embedding;
         return data.embedding || (data.embeddings && data.embeddings[0]);
     }, { maxRetries: 1 });
