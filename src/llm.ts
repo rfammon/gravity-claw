@@ -279,10 +279,10 @@ export async function chat(
         return res;
     };
 
-    // PRIMARY: Google Gemini (Fast & Free)
+    // 1. PRIMARY: Google Gemini (Fast & Free)
     if (config.googleApiKey) {
         try {
-            console.log(`🤖 Requesting LLM (Primary Override: Google Gemini [${config.googleLlmModel}])...`);
+            console.log(`🤖 Requesting LLM (Primary: Google Gemini [${config.googleLlmModel}])...`);
             const message = await googleChat(sanitizedMessages as any, tools);
             const response = {
                 choices: [{
@@ -293,147 +293,70 @@ export async function chat(
             };
             return parseResponse(response);
         } catch (error) {
-            console.warn(`⚠️ Google Gemini primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back...`);
+            console.warn(`⚠️ Google Gemini failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal...`);
         }
     }
 
-    // ── OVERRIDE: LOCAL / CUSTOM CLOUD PRIMARY ─────────────────
-    if (config.primaryProvider === "ollama") {
-
+    // 2. SECONDARY: MODAL (GLM-5)
+    if (config.modalApiKey && config.modalBaseUrl) {
         try {
-            console.log(`🤖 Requesting LLM (Primary Override: Ollama [${config.ollamaDefaultModel}] @ ${config.ollamaBaseUrl})...`);
-            const ollamaStartTime = Date.now();
-            const message = await ollamaChat(sanitizedMessages as any, config.ollamaDefaultModel, tools);
-            console.log(`✅ LLM Response received from Ollama in ${Date.now() - ollamaStartTime}ms`);
-
-            // Wrap in OpenAI-compatible structure
-            const response = {
-                choices: [{
-                    message,
-                    finish_reason: "stop",
-                    index: 0
-                }]
-            };
-            return parseResponse(response);
-        } catch (error) {
-            console.warn(`⚠️ Ollama primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
-        }
-    } else if (config.primaryProvider === "opencode" && config.openCodeApiKey) {
-        try {
-            console.log(`🤖 Requesting LLM (Primary Override: OpenCode [${MODELS.opencode.standard}])...`);
-            const ocStartTime = Date.now();
+            console.log(`🤖 Requesting LLM (Secondary: Modal [${MODELS.modal.standard}])...`);
+            const modalStartTime = Date.now();
             const response = await withRetry(
-                () => openCodeClient.chat.completions.create({
-                    model: MODELS.opencode.standard,
+                () => modalClient.chat.completions.create({
+                    model: MODELS.modal.standard,
                     ...callArgs
                 }),
                 { maxRetries: 2 }
             );
-            console.log(`✅ LLM Response received from OpenCode in ${Date.now() - ocStartTime}ms`);
+            console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
             return parseResponse(response);
         } catch (error) {
-            console.warn(`⚠️ OpenCode primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
+            console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenRouter...`);
         }
-    } else if (config.primaryProvider === "antigravity" && config.googleRefreshToken) {
+    }
+
+    // 3. TERTIARY: OPENROUTER (DeepSeek V3 / GLM-4.5)
+    if (config.openRouterKey) {
         try {
-            console.log(`🤖 Requesting LLM (Primary Override: Antigravity [${config.googleLlmModel}])...`);
-            const agStartTime = Date.now();
-            const message = await antigravityChat(sanitizedMessages as any, tools);
-            console.log(`✅ LLM Response received from Antigravity in ${Date.now() - agStartTime}ms`);
-
-            const response = {
-                choices: [{
-                    message,
-                    finish_reason: "stop",
-                    index: 0
-                }]
-            };
+            console.log(`🤖 Requesting LLM (Tertiary: OpenRouter [${MODELS.openRouter.standard}])...`);
+            const orStartTime = Date.now();
+            const response = await withRetry(
+                () => openRouterClient.chat.completions.create({
+                    model: MODELS.openRouter.standard,
+                    ...callArgs
+                }),
+                { maxRetries: 1 }
+            );
+            console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - orStartTime}ms`);
             return parseResponse(response);
         } catch (error) {
-            console.warn(`⚠️ Antigravity primary failed: ${error instanceof Error ? error.message : String(error)}. Falling back to Cloud...`);
+            console.warn(`⚠️ OpenRouter failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
         }
     }
 
-    // ── PRIMARY: OPENROUTER (DeepSeek V3) ─────────────────────────
+    // 4. FINAL FALLBACK: GROQ (Limited context)
     try {
-        console.log(`🤖 Requesting LLM (Primary: OpenRouter [${MODELS.openRouter.standard}])...`);
-        const orStartTime = Date.now();
-        const response = await withRetry(
-            () => openRouterClient.chat.completions.create({
-                model: MODELS.openRouter.standard,
-                ...callArgs
-            }),
-            { maxRetries: 2 }
-        );
-        console.log(`✅ LLM Response received from OpenRouter in ${Date.now() - orStartTime}ms`);
-        return parseResponse(response);
-    } catch (error) {
-        console.warn(`⚠️ OpenRouter failed: ${error instanceof Error ? error.message : String(error)}. Trying Modal (GLM-5)...`);
-    }
-
-    // ── FALLBACK 1: MODAL (GLM-5) ──────────────────────────────────────
-    try {
-        console.log(`🤖 Requesting LLM (Fallback 1: Modal [${MODELS.modal.standard}])...`);
-        const modalStartTime = Date.now();
-        const response = await withRetry(
-            () => modalClient.chat.completions.create({
-                model: MODELS.modal.standard,
-                ...callArgs
-            }),
-            { maxRetries: 2 }
-        );
-        console.log(`✅ LLM Response received from Modal in ${Date.now() - modalStartTime}ms`);
-        return parseResponse(response);
-    } catch (error) {
-        console.warn(`⚠️ Modal failed: ${error instanceof Error ? error.message : String(error)}. Trying Groq...`);
-    }
-
-    // ── FALLBACK 2: GROQ ───────────────────────────────────────
-    try {
-        console.log(`🤖 Requesting LLM (Fallback 2: Groq [${MODELS.groq.standard}])...`);
+        console.log(`🤖 Requesting LLM (Fallback: Groq [${MODELS.groq.standard}])...`);
         const groqStartTime = Date.now();
-
-        // Limit history for Groq to avoid 12k TPM limit (typically 8-12 messages max)
         let groqMessages = sanitizedMessages;
-        if (sanitizedMessages.length > 15) {
-            groqMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-10)];
+        if (sanitizedMessages.length > 10) {
+            groqMessages = [sanitizedMessages[0], ...sanitizedMessages.slice(-8)];
         }
-
         const groqCallArgs = { ...callArgs, messages: groqMessages };
-
         const response = await withRetry(
             () => groqClient.chat.completions.create({
                 model: MODELS.groq.standard,
                 ...groqCallArgs
             }),
-            { maxRetries: 2 }
+            { maxRetries: 1 }
         );
         console.log(`✅ LLM Response received from Groq in ${Date.now() - groqStartTime}ms`);
         return parseResponse(response);
     } catch (error) {
-        console.warn(`⚠️ Groq failed: ${error instanceof Error ? error.message : String(error)}. Trying OpenCode...`);
+        console.error("❌ All providers failed.");
+        throw error;
     }
-
-    // ── FALLBACK 3: OPENCODE ZEN ───────────────────────────────
-    if (config.openCodeApiKey) {
-        try {
-            console.log(`🤖 Requesting LLM (Fallback 3: OpenCode [${MODELS.opencode.standard}])...`);
-            const openCodeStartTime = Date.now();
-            const response = await withRetry(
-                () => openCodeClient.chat.completions.create({
-                    model: MODELS.opencode.standard,
-                    ...callArgs
-                }),
-                { maxRetries: 2 }
-            );
-            console.log(`✅ LLM Response received from OpenCode in ${Date.now() - openCodeStartTime}ms`);
-            return parseResponse(response);
-        } catch (error) {
-            console.warn(`⚠️ OpenCode failed: ${error instanceof Error ? error.message : String(error)}`);
-            throw error;
-        }
-    }
-
-    throw new Error("❌ All cloud LLM providers failed and no local fallback available!");
 }
+
 
