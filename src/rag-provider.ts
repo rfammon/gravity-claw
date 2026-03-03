@@ -71,13 +71,17 @@ export class RAGProvider {
 
     /**
      * Search for relevant facts using cosine similarity.
+     * Filters out system noise and technical logs.
      */
     async searchFacts(chatId: string, query: string, limit: number = 3): Promise<string[]> {
         try {
             const embedding = await this.generateEmbedding(query);
+            
+            // Build filter to exclude system contamination
+            // We only want real facts or important user/assistant interactions
             const results = await lanceProvider.search("factual_memories", {
                 vector: embedding,
-                filter: `chat_id = '${chatId}'`,
+                filter: `chat_id = '${chatId}' AND content NOT LIKE '%LLM Tracker%' AND content NOT LIKE '%system:%'`,
                 limit: limit
             });
             
@@ -90,6 +94,7 @@ export class RAGProvider {
 
         return [];
     }
+
 }
 
 export const rag = new RAGProvider();
