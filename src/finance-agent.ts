@@ -1,31 +1,16 @@
 import OpenAI from "openai";
 import { config } from "./config.js";
 import { registerTool } from "./tools/registry.js";
-
-// ── Modal client (GLM-5-FP8 Finance Specialist) ─────────────
-const FINANCE_MODEL = "zai-org/GLM-5-FP8";
-
-function getModalClient(): OpenAI {
-    if (!config.modalBaseUrl || !config.modalApiKey) {
-        throw new Error("❌ Modal API credentials missing. Set MODAL_BASE_URL and MODAL_API_KEY in .env");
-    }
-    return new OpenAI({
-        baseURL: config.modalBaseUrl,
-        apiKey: config.modalApiKey,
-    });
-}
+import { routeChat } from "./llm-router.js";
 
 // ── Finance Agent Runner ─────────────────────────────────────
 export async function runFinanceAgent(history: OpenAI.Chat.Completions.ChatCompletionMessageParam[]): Promise<string> {
-    const client = getModalClient();
-
-    console.log(`⚡ Finance Agent (${FINANCE_MODEL}) processing task (History length: ${history.length})...`);
+    console.log(`⚡ Finance Agent processing task (History length: ${history.length})...`);
     const startTime = Date.now();
 
-    const response = await client.chat.completions.create({
-        model: FINANCE_MODEL,
-        max_tokens: 8192,
-        messages: history,
+    // Uses the LLM router — routes through all free providers automatically
+    const response = await routeChat(history as any, {
+        maxTokens: 8192,
     });
 
     const elapsed = Date.now() - startTime;
@@ -37,7 +22,7 @@ export async function runFinanceAgent(history: OpenAI.Chat.Completions.ChatCompl
 // ── Register as a Tool ────────────────────────────────────
 registerTool({
     name: "delegate_to_finance_agent",
-    description: "Delega uma tarefa de planejamento financeiro complexo (como montar um projeto financeiro focado, buscar melhores taxas para quitar um apartamento, organizar um plano de amortização ou estruturar uma reserva) para o especialista financeiro focado (GLM-5). Use esta ferramenta SEMPRE que a tarefa financeira for complexa e exigir mais raciocínio ou pesquisa. Passe os detalhes financeiros do usuário, saldos, gastos e o pedido original.",
+    description: "Delega uma tarefa de planejamento financeiro complexo (como montar um projeto financeiro focado, buscar melhores taxas para quitar um apartamento, organizar um plano de amortização ou estruturar uma reserva) para o especialista financeiro focado. Use esta ferramenta SEMPRE que a tarefa financeira for complexa e exigir mais raciocínio ou pesquisa. Passe os detalhes financeiros do usuário, saldos, gastos e o pedido original.",
     parameters: {
         type: "object",
         properties: {
@@ -72,4 +57,3 @@ REGRAS:
         }
     }
 });
-

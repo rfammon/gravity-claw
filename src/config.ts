@@ -72,6 +72,12 @@ const modalApiKey = optionalEnv("MODAL_API_KEY");
 const ocrSpaceApiKey = optionalEnv("OCR_SPACE_API_KEY");
 const masterKey = optionalEnv("MASTER_KEY");
 
+console.log("\n📋 Free API Providers:");
+const cerebrasApiKey = optionalEnv("CEREBRAS_API_KEY");
+const mistralApiKey = optionalEnv("MISTRAL_API_KEY");
+const googleAiStudioKey = optionalEnv("GOOGLE_AI_STUDIO_KEY");
+const llmCacheEnabled = optionalEnv("LLM_CACHE_ENABLED", "true");
+
 console.log("\n📋 Ollama Cloud / Local:");
 const ollamaApiKey = optionalEnv("OLLAMA_API_KEY");
 let ollamaBaseUrl = optionalEnv("OLLAMA_BASE_URL");
@@ -132,6 +138,12 @@ export const config = {
     primaryProvider,
     ollamaDefaultModel,
 
+    // ── Free API Providers ───────────────────────────────
+    cerebrasApiKey,
+    mistralApiKey,
+    googleAiStudioKey,
+    llmCacheEnabled: llmCacheEnabled === "true",
+
     // ── Supabase (optional — enables cloud DB) ───────────
     supabaseUrl,
     supabaseServiceKey,
@@ -179,3 +191,14 @@ if (config.ollamaApiKey) {
 } else {
     console.log("🤖 Ollama: LOCAL (No API Key detected)");
 }
+
+// Free API providers summary
+const freeProviders = [
+    config.googleAiStudioKey && "Google AI Studio",
+    config.groqApiKey && "Groq",
+    config.cerebrasApiKey && "Cerebras",
+    config.openRouterKey && "OpenRouter",
+    config.mistralApiKey && "Mistral",
+].filter(Boolean);
+console.log(`🆓 Free LLM Providers: [${freeProviders.join(", ")}]`);
+console.log(`💾 LLM Cache: ${config.llmCacheEnabled ? "ENABLED" : "DISABLED"}`);
