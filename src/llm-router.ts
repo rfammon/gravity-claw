@@ -61,7 +61,7 @@ if (!fs.existsSync(GRAVITY_DIR)) fs.mkdirSync(GRAVITY_DIR, { recursive: true });
 const FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // 5 min cooldown after 3+ failures
 const MAX_FAILURES_BEFORE_SKIP = 3;
 const CACHE_TTL_HOURS = 24;
-const OLLAMA_TIMEOUT_MS = 15_000; // 15s timeout for local Ollama (fail fast → cloud)
+const OLLAMA_TIMEOUT_MS = 5_000; // 5s timeout for local Ollama (fail fast → cloud)
 
 // ── Cache Database ───────────────────────────────────────────────────
 let cacheDb: Database.Database | null = null;
@@ -453,6 +453,9 @@ export async function routeChat(
             if (tools && tools.length > 0) {
                 // Sanitize tool schemas for Gemini compatibility
                 callArgs.tools = provider.isGemini ? sanitizeToolsForGemini(tools) : tools;
+                // Force tool_choice to "auto" to ensure the model considers tool calls
+                callArgs.tool_choice = "auto";
+                console.log(`🔧 [Router] Sending ${callArgs.tools.length} tools to ${provider.name}`);
             }
 
             let response: any;
