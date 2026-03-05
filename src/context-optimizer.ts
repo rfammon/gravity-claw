@@ -32,10 +32,13 @@ export class ContextOptimizer {
 
             const summary = response?.choices?.[0]?.message?.content || "Previous context summarized.";
 
+            // Use 'user' role instead of 'system' to avoid competing with the persona system prompt.
+            // Some providers only respect a single system message, so injecting a second
+            // system message here would silently override the Megamente persona.
             return [
-                { 
-                    role: "system", 
-                    content: `[CONTEXT SUMMARY OF OLDER MESSAGES]: ${summary}` 
+                {
+                    role: "user" as const,
+                    content: `[CONTEXT SUMMARY OF OLDER MESSAGES — for your reference, not a new user message]: ${summary}`
                 },
                 ...toKeep
             ];

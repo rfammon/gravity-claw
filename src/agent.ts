@@ -38,8 +38,13 @@ export async function runAgent(
   // 1. Get history from DB (limit to 30 messages to allow for summarization)
   const rawHistory = (await getChatHistory(chatId, 30)) as Message[];
 
-  // 1b. Optimize context (Compress old messages if needed)
-  const history = await contextOptimizer.compressHistory(chatId, rawHistory);
+  // 1b. Filter out any system-role messages from history.
+  // The persona system prompt is always built fresh below — stale system messages
+  // from the DB or context-optimizer summaries would dilute/override the persona.
+  const filteredHistory = rawHistory.filter((m: any) => m.role !== "system");
+
+  // 1c. Optimize context (Compress old messages if needed)
+  const history = await contextOptimizer.compressHistory(chatId, filteredHistory);
 
   // 2. Add system prompt with facts
   const searchLimit = contextOptimizer.calculateSearchLimit(enrichedMessage);
@@ -123,8 +128,11 @@ FORMATTING:
 - Put emojis at the end of sentences.`
   };
 
-  // Prepend system prompt if not present or always refresh it
-  const messages: Message[] = [systemPrompt, ...history, { role: "user", content: enrichedMessage }];
+  // Prepend system prompt — always refresh it. Filter out any system messages
+  // that may have been injected by the context optimizer compression.
+  const cleanHistory = (history as any[]).filter((m: any) => m.role !== "system");
+  const messages: Message[] = [systemPrompt, ...cleanHistory, { role: "user", content: enrichedMessage }];
+  console.log(`🎭 [Agent] Persona loaded: system prompt (${(systemPrompt.content as string).length} chars), history: ${cleanHistory.length} msgs, facts: ${factSummary.length} chars`);
 
   let iterations = 0;
   const accumulatedMedia: AgentResult["media"] = [];
