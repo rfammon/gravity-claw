@@ -34,6 +34,7 @@ export interface ProviderConfig {
     model: string;
     client: OpenAI | Groq;
     isGroq?: boolean;
+    isGemini?: boolean; // Needs tool schema sanitization
     isOllamaLocal?: boolean; // Uses local Ollama (may not be running)
     maxContextMessages?: number; // Trim history for providers with small context
     enabled: boolean;
@@ -84,24 +85,74 @@ function getCacheDb(): Database.Database {
     return cacheDb;
 }
 
+// ── Tool Schema Sanitizer for Gemini ─────────────────────────────────
+// Gemini's OpenAI-compat endpoint rejects schemas with additionalProperties,
+// $ref, and other OpenAI-specific extensions. Strip them recursively.
+function sanitizeToolsForGemini(tools: any[]): any[] {
+    function cleanSchema(schema: any): any {
+        if (!schema || typeof schema !== 'object') return schema;
+        const cleaned: any = {};
+        for (const [key, value] of Object.entries(schema)) {
+            // Skip properties Gemini doesn't support
+            if (key === 'additionalProperties') continue;
+            if (key === '$ref') continue;
+            if (key === 'x-order') continue;
+            if (key === 'properties' && typeof value === 'object') {
+                cleaned.properties = {};
+                for (const [pk, pv] of Object.entries(value as any)) {
+                    cleaned.properties[pk] = cleanSchema(pv);
+                }
+            } else if (key === 'items' && typeof value === 'object') {
+                cleaned.items = cleanSchema(value);
+            } else {
+                cleaned[key] = value;
+            }
+        }
+        return cleaned;
+    }
+
+    return tools.map(tool => ({
+        type: tool.type,
+        function: {
+            name: tool.function.name,
+            description: tool.function.description,
+            parameters: cleanSchema(tool.function.parameters),
+        },
+    }));
+}
+
 // ── Provider Clients ─────────────────────────────────────────────────
 
 function buildProviders(): ProviderConfig[] {
     const providers: ProviderConfig[] = [];
 
-    // 1. Groq — ultra-low latency, excellent tool calling (300+ tok/s)
+    // 1. Google AI Studio (Gemini 2.5 Flash) — best free option, huge context, 1500 RPD
+    if (config.googleAiStudioKey) {
+        providers.push({
+            name: "Google AI Studio",
+            model: "gemini-2.5-flash",
+            client: new OpenAI({
+                baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+                apiKey: config.googleAiStudioKey,
+            }),
+            isGemini: true,
+            enabled: true,
+        });
+    }
+
+    // 2. Groq — ultra-low latency (300+ tok/s), good tool calling
     if (config.groqApiKey) {
         providers.push({
             name: "Groq",
             model: "llama-3.3-70b-versatile",
             client: new Groq({ apiKey: config.groqApiKey }) as any,
             isGroq: true,
-            maxContextMessages: 20, // Groq has lower TPM limits
+            maxContextMessages: 20,
             enabled: true,
         });
     }
 
-    // 2. Cerebras — 1M tokens/day, 30 RPM
+    // 3. Cerebras — 1M tokens/day, 30 RPM
     if (config.cerebrasApiKey) {
         providers.push({
             name: "Cerebras",
@@ -114,7 +165,7 @@ function buildProviders(): ProviderConfig[] {
         });
     }
 
-    // 3. OpenRouter — 24+ free models
+    // 4. OpenRouter — 24+ free models
     if (config.openRouterKey) {
         providers.push({
             name: "OpenRouter",
@@ -131,33 +182,7 @@ function buildProviders(): ProviderConfig[] {
         });
     }
 
-    // 4. Google AI Studio (Gemini 2.5 Flash) — huge context but tool calling issues via OpenAI compat
-    if (config.googleAiStudioKey) {
-        providers.push({
-            name: "Google AI Studio",
-            model: "gemini-2.5-flash",
-            client: new OpenAI({
-                baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-                apiKey: config.googleAiStudioKey,
-            }),
-            enabled: true,
-        });
-    }
-
-    // 5. Modal (paid fallback)
-    if (config.modalApiKey && config.modalBaseUrl) {
-        providers.push({
-            name: "Modal",
-            model: "zai-org/GLM-5-FP8",
-            client: new OpenAI({
-                baseURL: config.modalBaseUrl,
-                apiKey: config.modalApiKey,
-            }),
-            enabled: true,
-        });
-    }
-
-    // 6. Mistral — 1B tokens/month (last resort)
+    // 5. Mistral — 1B tokens/month
     if (config.mistralApiKey) {
         providers.push({
             name: "Mistral",
@@ -165,6 +190,19 @@ function buildProviders(): ProviderConfig[] {
             client: new OpenAI({
                 baseURL: "https://api.mistral.ai/v1",
                 apiKey: config.mistralApiKey,
+            }),
+            enabled: true,
+        });
+    }
+
+    // 6. Modal (paid fallback — LAST RESORT)
+    if (config.modalApiKey && config.modalBaseUrl) {
+        providers.push({
+            name: "Modal",
+            model: "zai-org/GLM-5-FP8",
+            client: new OpenAI({
+                baseURL: config.modalBaseUrl,
+                apiKey: config.modalApiKey,
             }),
             enabled: true,
         });
@@ -413,7 +451,8 @@ export async function routeChat(
 
             // Only pass tools if the provider supports them and tools are provided
             if (tools && tools.length > 0) {
-                callArgs.tools = tools;
+                // Sanitize tool schemas for Gemini compatibility
+                callArgs.tools = provider.isGemini ? sanitizeToolsForGemini(tools) : tools;
             }
 
             let response: any;
