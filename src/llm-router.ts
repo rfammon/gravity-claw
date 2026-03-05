@@ -156,7 +156,7 @@ function buildProviders(): ProviderConfig[] {
         });
     }
 
-    // 6. Mistral — 1B tokens/month (Experiment plan, last resort)
+    // 6. Mistral — 1B tokens/month (Experiment plan)
     if (config.mistralApiKey) {
         providers.push({
             name: "Mistral",
@@ -165,6 +165,24 @@ function buildProviders(): ProviderConfig[] {
                 baseURL: "https://api.mistral.ai/v1",
                 apiKey: config.mistralApiKey,
             }),
+            enabled: true,
+        });
+    }
+
+    // 7. Qwen 3.5 2B via local Ollama — ULTIMATE fallback (zero cost, tool calling capable)
+    // If all cloud providers fail, the bot can still respond locally (degraded but functional).
+    {
+        const ollamaBase = (config.ollamaBaseUrl || "http://localhost:11434").replace(/\/+$/, "");
+        const baseURL = ollamaBase.endsWith('/v1') ? ollamaBase : `${ollamaBase}/v1`;
+        providers.push({
+            name: "Ollama Qwen3.5-2B (Local)",
+            model: "qwen3.5:2b",
+            client: new OpenAI({
+                baseURL,
+                apiKey: config.ollamaApiKey || "ollama",
+            }),
+            isOllamaLocal: true,
+            maxContextMessages: 30,
             enabled: true,
         });
     }
