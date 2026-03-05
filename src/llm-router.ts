@@ -60,6 +60,7 @@ if (!fs.existsSync(GRAVITY_DIR)) fs.mkdirSync(GRAVITY_DIR, { recursive: true });
 const FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // 5 min cooldown after 3+ failures
 const MAX_FAILURES_BEFORE_SKIP = 3;
 const CACHE_TTL_HOURS = 24;
+const OLLAMA_TIMEOUT_MS = 15_000; // 15s timeout for local Ollama (fail fast → cloud)
 
 // ── Cache Database ───────────────────────────────────────────────────
 let cacheDb: Database.Database | null = null;
@@ -180,6 +181,7 @@ function buildProviders(): ProviderConfig[] {
             client: new OpenAI({
                 baseURL,
                 apiKey: config.ollamaApiKey || "ollama",
+                timeout: OLLAMA_TIMEOUT_MS,
             }),
             isOllamaLocal: true,
             maxContextMessages: 30,
@@ -434,7 +436,14 @@ export async function routeChat(
             }
 
             let response: any;
-            if (provider.isGroq) {
+            if (provider.isOllamaLocal) {
+                // Race against timeout for local providers (fail fast → cloud)
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error(`Ollama timeout (${OLLAMA_TIMEOUT_MS}ms)`)), OLLAMA_TIMEOUT_MS)
+                );
+                const apiCall = (provider.client as OpenAI).chat.completions.create(callArgs);
+                response = await Promise.race([apiCall, timeoutPromise]);
+            } else if (provider.isGroq) {
                 response = await (provider.client as Groq).chat.completions.create(callArgs);
             } else {
                 response = await (provider.client as OpenAI).chat.completions.create(callArgs);
