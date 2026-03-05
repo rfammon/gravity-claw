@@ -215,24 +215,9 @@ function buildProviders(): ProviderConfig[] {
 function buildLightProviders(): ProviderConfig[] {
     const providers: ProviderConfig[] = [];
 
-    // 0. Qwen 3.5 0.8B via local Ollama — FIRST priority (zero cost, no rate limits)
-    // Uses Ollama's OpenAI-compatible endpoint. Skipped gracefully if Ollama isn't running.
-    {
-        const ollamaBase = (config.ollamaBaseUrl || "http://localhost:11434").replace(/\/+$/, "");
-        // Build the OpenAI-compatible URL for local Ollama
-        const baseURL = ollamaBase.endsWith('/v1') ? ollamaBase : `${ollamaBase}/v1`;
-        providers.push({
-            name: "Ollama Qwen3.5 (Local)",
-            model: "qwen3.5:0.8b",
-            client: new OpenAI({
-                baseURL,
-                apiKey: config.ollamaApiKey || "ollama", // Ollama local doesn't need auth
-            }),
-            isOllamaLocal: true,
-            maxContextMessages: 30, // 262K context but keep lean for speed
-            enabled: true,
-        });
-    }
+    // NOTE: Qwen 3.5 0.8B via Ollama was removed from the light chain.
+    // Ollama consistently times out on Android/Termux, adding 5s latency to every message.
+    // Groq (Light) is now the first provider — fast, free, and reliable.
 
     if (config.groqApiKey) {
         providers.push({
