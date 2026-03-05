@@ -2,17 +2,20 @@
  * LLM Router — Multi-Provider Intelligent Routing
  *
  * Routes LLM requests across free-tier providers with:
- *   1. Priority-based fallback chain (Google AI Studio → Groq → Cerebras → OpenRouter → Mistral)
+ *   1. Priority-based fallback chain (Google AI Studio → Groq → Cerebras → OpenRouter → Modal → Mistral)
  *   2. Automatic 429 detection and provider demotion
  *   3. SQLite response cache (hash-based dedup)
  *   4. Per-provider health tracking and stats
+ *   5. Local Qwen 3.5 0.8B via Ollama for light tasks (zero API cost)
  *
- * All providers are free-tier:
+ * Free-tier providers:
  *   - Google AI Studio: Gemini 2.5 Flash — 30 RPM, 1M context
  *   - Groq: Llama 3.3 70B — 14,400 req/day, 300+ tok/s
  *   - Cerebras: Llama 3.3 70B — 1M tok/day, 30 RPM
  *   - OpenRouter: 24+ free models — 20 RPM
  *   - Mistral: Experiment plan — 1B tok/month
+ * Local:
+ *   - Qwen 3.5 0.8B via Ollama — ~500MB RAM, 262K context, zero cost
  */
 
 import OpenAI from "openai";
@@ -31,6 +34,7 @@ export interface ProviderConfig {
     model: string;
     client: OpenAI | Groq;
     isGroq?: boolean;
+    isOllamaLocal?: boolean; // Uses local Ollama (may not be running)
     maxContextMessages?: number; // Trim history for providers with small context
     enabled: boolean;
 }
@@ -171,6 +175,25 @@ function buildProviders(): ProviderConfig[] {
 // Light providers — smaller/faster models for background tasks
 function buildLightProviders(): ProviderConfig[] {
     const providers: ProviderConfig[] = [];
+
+    // 0. Qwen 3.5 0.8B via local Ollama — FIRST priority (zero cost, no rate limits)
+    // Uses Ollama's OpenAI-compatible endpoint. Skipped gracefully if Ollama isn't running.
+    {
+        const ollamaBase = (config.ollamaBaseUrl || "http://localhost:11434").replace(/\/+$/, "");
+        // Build the OpenAI-compatible URL for local Ollama
+        const baseURL = ollamaBase.endsWith('/v1') ? ollamaBase : `${ollamaBase}/v1`;
+        providers.push({
+            name: "Ollama Qwen3.5 (Local)",
+            model: "qwen3.5:0.8b",
+            client: new OpenAI({
+                baseURL,
+                apiKey: config.ollamaApiKey || "ollama", // Ollama local doesn't need auth
+            }),
+            isOllamaLocal: true,
+            maxContextMessages: 30, // 262K context but keep lean for speed
+            enabled: true,
+        });
+    }
 
     if (config.groqApiKey) {
         providers.push({
