@@ -89,20 +89,7 @@ function getCacheDb(): Database.Database {
 function buildProviders(): ProviderConfig[] {
     const providers: ProviderConfig[] = [];
 
-    // 1. Google AI Studio (Gemini 2.5 Flash) — best free option, huge context
-    if (config.googleAiStudioKey) {
-        providers.push({
-            name: "Google AI Studio",
-            model: "gemini-2.5-flash",
-            client: new OpenAI({
-                baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-                apiKey: config.googleAiStudioKey,
-            }),
-            enabled: true,
-        });
-    }
-
-    // 2. Groq — ultra-low latency (300+ tok/s)
+    // 1. Groq — ultra-low latency, excellent tool calling (300+ tok/s)
     if (config.groqApiKey) {
         providers.push({
             name: "Groq",
@@ -114,7 +101,7 @@ function buildProviders(): ProviderConfig[] {
         });
     }
 
-    // 3. Cerebras — 1M tokens/day, 30 RPM
+    // 2. Cerebras — 1M tokens/day, 30 RPM
     if (config.cerebrasApiKey) {
         providers.push({
             name: "Cerebras",
@@ -127,7 +114,7 @@ function buildProviders(): ProviderConfig[] {
         });
     }
 
-    // 4. OpenRouter — 24+ free models
+    // 3. OpenRouter — 24+ free models
     if (config.openRouterKey) {
         providers.push({
             name: "OpenRouter",
@@ -144,7 +131,20 @@ function buildProviders(): ProviderConfig[] {
         });
     }
 
-    // 5. Modal (paid fallback — before last resort)
+    // 4. Google AI Studio (Gemini 2.5 Flash) — huge context but tool calling issues via OpenAI compat
+    if (config.googleAiStudioKey) {
+        providers.push({
+            name: "Google AI Studio",
+            model: "gemini-2.5-flash",
+            client: new OpenAI({
+                baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+                apiKey: config.googleAiStudioKey,
+            }),
+            enabled: true,
+        });
+    }
+
+    // 5. Modal (paid fallback)
     if (config.modalApiKey && config.modalBaseUrl) {
         providers.push({
             name: "Modal",
@@ -157,7 +157,7 @@ function buildProviders(): ProviderConfig[] {
         });
     }
 
-    // 6. Mistral — 1B tokens/month (Experiment plan)
+    // 6. Mistral — 1B tokens/month (last resort)
     if (config.mistralApiKey) {
         providers.push({
             name: "Mistral",
@@ -166,25 +166,6 @@ function buildProviders(): ProviderConfig[] {
                 baseURL: "https://api.mistral.ai/v1",
                 apiKey: config.mistralApiKey,
             }),
-            enabled: true,
-        });
-    }
-
-    // 7. Qwen 3.5 2B via local Ollama — ULTIMATE fallback (zero cost, tool calling capable)
-    // If all cloud providers fail, the bot can still respond locally (degraded but functional).
-    {
-        const ollamaBase = (config.ollamaBaseUrl || "http://localhost:11434").replace(/\/+$/, "");
-        const baseURL = ollamaBase.endsWith('/v1') ? ollamaBase : `${ollamaBase}/v1`;
-        providers.push({
-            name: "Ollama Qwen3.5-2B (Local)",
-            model: "qwen3.5:2b",
-            client: new OpenAI({
-                baseURL,
-                apiKey: config.ollamaApiKey || "ollama",
-                timeout: OLLAMA_TIMEOUT_MS,
-            }),
-            isOllamaLocal: true,
-            maxContextMessages: 30,
             enabled: true,
         });
     }
