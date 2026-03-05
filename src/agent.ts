@@ -37,20 +37,20 @@ export async function runAgent(
 
   // 1. Get history from DB (limit to 30 messages to allow for summarization)
   const rawHistory = (await getChatHistory(chatId, 30)) as Message[];
-  
+
   // 1b. Optimize context (Compress old messages if needed)
   const history = await contextOptimizer.compressHistory(chatId, rawHistory);
 
   // 2. Add system prompt with facts
   const searchLimit = contextOptimizer.calculateSearchLimit(enrichedMessage);
   const semanticFacts = searchLimit > 0 ? await rag.searchFacts(chatId, enrichedMessage, searchLimit) : [];
-  
+
   const structuredFacts = await getFacts(chatId);
   const factSummary = [
     ...Object.entries(structuredFacts).map(([k, v]) => `${k}: ${v}`),
     ...semanticFacts
   ].join("\n");
-  
+
   const judgments = await getLatestJudgments(chatId);
 
 
@@ -92,6 +92,16 @@ FINANCE (CFO):
 CANVAS & UI (A2UI):
 - If the user asks for a visual representation, interactive widget, chart, or form, use the "push_to_canvas" tool.
 - Pass rich HTML, CSS (inlined), and JS to make it look great!
+
+MEMORY (CRITICAL):
+- You have PERSISTENT MEMORY. Use it actively!
+- "store_fact" / "get_facts" — key-value facts in the database. ALWAYS WORKS, even offline.
+  When the user tells you something important (name, preference, birthday), SAVE IT with store_fact.
+  When asked "what do you remember?", call get_facts FIRST.
+- "save_core_memory" / "search_core_memory" — rich semantic memory (requires Ollama).
+  If these fail, fall back to store_fact / get_facts.
+- "get_chat_history" — retrieve past conversation from the database.
+- NEVER say "I don't have access to memory" — you DO have memory tools. USE THEM.
 
 FORMATTING:
 - NO "#" or "###" (Telegram doesn't support them). Use **BOLD CAPS** for titles and **Bold** for list items.
