@@ -57,13 +57,13 @@ import { registerSupabaseTools } from "./tools/supabase-tool.js";
 import { registerReminderTools } from "./tools/reminder-tool.js";
 import { registerCoreMemoryTools } from "./tools/core-memory.js";
 import { registerCalendarTools } from "./tools/calendar-tool.js";
-import { initCalendar } from "./google-calendar.js";
+import { initCalendar } from "./supabase-calendar.js";
 
 registerSupabaseTools();
 registerReminderTools();
 registerCoreMemoryTools();
 
-// 📅 Google Calendar — Event sync with reminders
+// 📅 Supabase Calendar — Event sync with database storage
 initCalendar();
 registerCalendarTools();
 console.log("☁️ Supabase Tools enabled");

@@ -11,8 +11,9 @@ import {
     createCalendarEvent,
     deleteCalendarEvent,
     checkAvailability,
-    listCalendars,
-} from "../google-calendar.js";
+} from "../supabase-calendar.js";
+import { broadcastToCanvas } from "../canvas/server.js";
+import { renderHtmlToImage } from "../canvas/renderer.js";
 
 /**
  * Parse flexible date/time inputs:
@@ -92,7 +93,7 @@ Ou use from/to (ISO 8601) para datas específicas.`,
                 },
             },
         },
-        execute: async (input: Record<string, unknown>) => {
+        execute: async (input: Record<string, unknown>): Promise<string | import('./registry.js').ToolResult> => {
             if (!isCalendarConfigured()) {
                 return JSON.stringify({ success: false, error: "Google Calendar não configurado. Defina GOOGLE_CALENDAR_TOKEN no .env." });
             }
@@ -114,7 +115,6 @@ Ou use from/to (ISO 8601) para datas específicas.`,
                     inicio: e.start,
                     fim: e.end,
                     local: e.location || null,
-                    meet: e.meetLink || null,
                 }));
 
                 return JSON.stringify({ success: true, count: events.length, events: formatted });
@@ -158,14 +158,6 @@ Formatos aceitos para 'start': ISO 8601 ('2026-03-01T14:00:00-03:00'), relativo 
                     type: "string",
                     description: "Local do evento",
                 },
-                attendees: {
-                    type: "string",
-                    description: "Emails dos participantes separados por vírgula",
-                },
-                meet: {
-                    type: "boolean",
-                    description: "Adicionar link do Google Meet (default: false)",
-                },
             },
             required: ["title", "start"],
         },
@@ -174,9 +166,6 @@ Formatos aceitos para 'start': ISO 8601 ('2026-03-01T14:00:00-03:00'), relativo 
                 return JSON.stringify({ success: false, error: "Google Calendar não configurado." });
             }
             try {
-                const attendees = input.attendees
-                    ? String(input.attendees).split(",").map((e) => e.trim()).filter(Boolean)
-                    : undefined;
 
                 // Parse flexible date formats
                 const startDate = parseFlexibleDate(String(input.start));
@@ -191,16 +180,12 @@ Formatos aceitos para 'start': ISO 8601 ('2026-03-01T14:00:00-03:00'), relativo 
                     durationMinutes: (input.duration_minutes as number) || 60,
                     description: input.description ? String(input.description) : undefined,
                     location: input.location ? String(input.location) : undefined,
-                    attendees,
-                    addMeetLink: !!input.meet,
                 });
 
                 return JSON.stringify({
                     success: true,
                     message: `Evento "${event.summary}" criado com sucesso!`,
                     event_id: event.id,
-                    link: event.htmlLink,
-                    meet_link: event.meetLink || null,
                 });
             } catch (err) {
                 console.error("❌ calendar_create error:", err);
@@ -327,7 +312,6 @@ Ou use diretamente para criar um lembrete que já aparece no Google Calendar.`,
                     success: true,
                     message: `Lembrete sincronizado com Google Calendar!`,
                     event_id: event.id,
-                    link: event.htmlLink,
                 });
             } catch (err) {
                 console.error("❌ calendar_sync_reminder error:", err);
@@ -336,5 +320,174 @@ Ou use diretamente para criar um lembrete que já aparece no Google Calendar.`,
         },
     });
 
-    console.log("📅 Registered Calendar tools: calendar_events, calendar_create, calendar_delete, calendar_busy, calendar_sync_reminder");
+    // ── calendar_visualize ───────────────────────────────────────
+    registerTool({
+        name: "calendar_visualize",
+        description: `Gera uma visualização rica e interativa do calendário e envia para o Live Canvas do usuário. Use quando o usuário pedir para 'ver a agenda' de forma visual.`,
+        parameters: {
+            type: "object",
+            properties: {
+                days_ahead: {
+                    type: "number",
+                    description: "Quantos dias à frente mostrar (default: 7)",
+                },
+            },
+        },
+        execute: async (input: Record<string, unknown>) => {
+            if (!isCalendarConfigured()) {
+                return JSON.stringify({ success: false, error: "Calendário não configurado." });
+            }
+            try {
+                const daysAhead = (input.days_ahead as number) || 7;
+                const now = new Date();
+                const endTimestamp = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+
+                const events = await listEvents({
+                    from: now.toISOString(),
+                    to: endTimestamp.toISOString(),
+                    limit: 50
+                });
+
+                // Group events by day
+                const grouped: Record<string, any[]> = {};
+                for (const ev of events) {
+                    const d = new Date(ev.start);
+                    // YYYY-MM-DD
+                    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    if (!grouped[dateKey]) grouped[dateKey] = [];
+                    grouped[dateKey].push(ev);
+                }
+
+                // Generate HTML
+                let html = `
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+                    body {
+                        font-family: 'Inter', sans-serif;
+                        background: transparent;
+                        color: #f3f4f6;
+                        margin: 0;
+                        padding: 20px;
+                    }
+                    .agenda-container {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                        max-width: 600px;
+                        margin: 0 auto;
+                    }
+                    .header {
+                        font-size: 1.5rem;
+                        font-weight: 700;
+                        text-align: center;
+                        margin-bottom: 10px;
+                        background: linear-gradient(90deg, #a855f7, #3b82f6);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                    }
+                    .day-group {
+                        background: rgba(255, 255, 255, 0.03);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        border-radius: 16px;
+                        padding: 20px;
+                        backdrop-filter: blur(10px);
+                    }
+                    .day-header {
+                        font-size: 1.2rem;
+                        font-weight: 600;
+                        margin-bottom: 15px;
+                        color: #c084fc;
+                        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                        padding-bottom: 10px;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    .event-card {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                        padding: 14px;
+                        margin-bottom: 12px;
+                        background: rgba(0, 0, 0, 0.25);
+                        border-radius: 10px;
+                        border-left: 4px solid #34d399;
+                        transition: transform 0.2s;
+                    }
+                    .event-card:last-child { margin-bottom: 0; }
+                    .event-card:hover { transform: translateX(5px); background: rgba(0, 0, 0, 0.35); }
+                    .event-title { font-weight: 600; font-size: 1.1rem; color: #ffffff; }
+                    .event-time { font-size: 0.9rem; color: #9ca3af; }
+                    .event-location { font-size: 0.85rem; color: #6b7280; margin-top: 4px; }
+                    .empty-state {
+                        text-align: center;
+                        color: #9ca3af;
+                        padding: 40px;
+                        font-size: 1.1rem;
+                        background: rgba(255, 255, 255, 0.02);
+                        border-radius: 16px;
+                        border: 1px dashed rgba(255, 255, 255, 0.1);
+                    }
+                </style>
+                <div class="agenda-container">
+                    <div class="header">Agenda (Próximos ${daysAhead} dias)</div>
+                `;
+
+                const sortedDates = Object.keys(grouped).sort();
+
+                if (sortedDates.length === 0) {
+                    html += `<div class="empty-state">Nenhum evento agendado para este período. 🌴</div>`;
+                } else {
+                    for (const dateKey of sortedDates) {
+                        const dateObj = new Date(dateKey + "T12:00:00Z"); // Fix TZ shifting
+                        const dayName = new Intl.DateTimeFormat('pt-BR', { weekday: 'long' }).format(dateObj);
+                        const dayNum = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' }).format(dateObj);
+                        const dayTitle = `${dayName.charAt(0).toUpperCase() + dayName.slice(1)}, ${dayNum}`;
+
+                        html += `<div class="day-group"><div class="day-header">📅 ${dayTitle}</div>`;
+
+                        const dayEvents = grouped[dateKey].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+                        for (const ev of dayEvents) {
+                            const startTime = new Date(ev.start).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit', timeZone: "America/Sao_Paulo" });
+                            const endTime = ev.end ? new Date(ev.end).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit', timeZone: "America/Sao_Paulo" }) : '';
+                            const timeStr = endTime ? `${startTime} - ${endTime}` : startTime;
+
+                            html += `
+                                <div class="event-card">
+                                    <div class="event-title">${ev.summary}</div>
+                                    <div class="event-time">🕒 ${timeStr}</div>
+                                    ${ev.location ? '<div class="event-location">📍 ' + ev.location + '</div>' : ''}
+                                </div>
+                            `;
+                        }
+                        html += `</div>`;
+                    }
+                }
+
+                html += `</div>`;
+
+                // 1. Broadcast to websocket
+                const wsSuccess = broadcastToCanvas({ type: 'html', content: html });
+
+                // 2. Headless screenshot
+                const imageBuffer = await renderHtmlToImage(html, 'html');
+
+                return {
+                    text: `✅ Calendário enviado para a tela do Live Canvas.`,
+                    media: [{
+                        type: "image",
+                        buffer: imageBuffer,
+                        caption: `📅 Agenda visual gerada`
+                    }]
+                };
+
+            } catch (err) {
+                console.error("❌ calendar_visualize error:", err);
+                return JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) });
+            }
+        },
+    });
+
+    console.log("📅 Registered Calendar tools: calendar_events, calendar_create, calendar_delete, calendar_busy, calendar_sync_reminder, calendar_visualize");
 }

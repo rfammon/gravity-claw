@@ -8,6 +8,7 @@ import * as calc from "./finance/finance-calculator.js";
 import { generateCategoryChartUrl } from "./finance/finance-charts.js";
 import { runCurationCycle, generateDailyReport } from "./skills/llm-tracker/index.js";
 import { runProactiveTriggers } from "./proactive-triggers.js";
+import { checkAndSendCalendarReminders } from "./supabase-calendar.js";
 import { runDynamicTriggers, evolveTriggers } from "./trigger-manager.js";
 import { runSATC } from "./satc.js";
 import { runMorningBriefing, runCuriosityResearch, runDailyDigest, runSmartSuggestions } from "./proactive-engine.js";
@@ -207,6 +208,24 @@ export function setupDefaultTasks(chatId: string) {
             await runSATC(chatId);
         } catch (err) {
             console.error(`❌ SATC error for ${chatId}:`, err);
+        }
+    });
+
+    // Proactive Triggers: contextual checks every 2 hours (Petrobras, Casa Nova, Finance)
+    scheduler.schedule(`${chatId}_proactive_triggers`, "0 */2 * * *", async () => {
+        try {
+            await runProactiveTriggers(chatId);
+        } catch (err) {
+            console.error(`❌ Proactive triggers error for ${chatId}:`, err);
+        }
+    });
+
+    // Calendar Event Reminders: check for upcoming events every 5 minutes
+    scheduler.schedule(`${chatId}_calendar_reminders`, "*/5 * * * *", async () => {
+        try {
+            await checkAndSendCalendarReminders(chatId);
+        } catch (err) {
+            console.error(`❌ Calendar reminders error for ${chatId}:`, err);
         }
     });
 }
