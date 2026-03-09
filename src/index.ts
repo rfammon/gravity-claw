@@ -27,6 +27,7 @@ import "./tools/get-current-time.js";
 import "./tools/web-search.js";
 import "./tools/trello.js";
 import "./tools/registry.js"; // This now registers browser_url
+import "./tools/obsidian-tool.js"; // Lightweight Obsidian Tools
 
 import "./code-agent.js"; // GLM-5 code specialist sub-agent
 import "./finance-agent.js"; // 💰 Finance planning specialist sub-agent
